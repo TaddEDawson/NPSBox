@@ -14,7 +14,7 @@
 param
 (
     [Parameter()]
-    [System.IO.FileInfo] $InputFile = "Box_Collaboration_Sample_Data.csv"
+    [System.IO.FileInfo] $InputFile = ".\Box_Collaboration_Sample_Data.csv"
     ,
     [Parameter()]
     [string] $UserToProcess = "AdilE@M365CPI19595461.OnMicrosoft.com"
