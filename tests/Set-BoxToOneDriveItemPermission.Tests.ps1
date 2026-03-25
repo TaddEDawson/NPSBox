@@ -466,4 +466,53 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
             $Message -like 'Log write failed*'
         }
     }
+
+    It 'resolves personal site URL when profile output is key/value entries with PersonalUrl' {
+        # Arrange
+        Mock Invoke-SboGetPnPUserProfileProperty {
+            @(
+                [PSCustomObject]@{ Key = 'AccountName'; Value = 'i:0#.f|membership|user@contoso.onmicrosoft.com' },
+                [PSCustomObject]@{ Key = 'PersonalUrl'; Value = $script:DefaultPersonalSiteUrl }
+            )
+        }
+
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 1
+        @($result)[0].PermissionChangeStatus | Should -Be 'Applied'
+        Assert-MockCalled Invoke-SboGetPnPUserProfileProperty -Times 1
+        Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
+    }
+
+    It 'resolves personal site URL from PersonalSiteHostUrl and PersonalSpace when PersonalUrl is absent' {
+        # Arrange
+        Mock Invoke-SboGetPnPUserProfileProperty {
+            @(
+                [PSCustomObject]@{ Key = 'PersonalSiteHostUrl'; Value = 'https://contoso-my.sharepoint.com:443/' },
+                [PSCustomObject]@{ Key = 'PersonalSpace'; Value = '/personal/user_contoso_onmicrosoft_com/' }
+            )
+        }
+
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 1
+        @($result)[0].ItemUrl.AbsoluteUri | Should -Match '^https://contoso-my\.sharepoint\.com/personal/'
+        Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
+    }
 }
