@@ -1,5 +1,18 @@
 #Requires -Module Microsoft.Online.SharePoint.PowerShell, PNP.PowerShell
 <#
+    .DISCLAIMER
+        This Sample Code is provided for the purpose of illustration only and is not intended to be used in a production environment.  
+        THIS SAMPLE CODE AND ANY RELATED INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, 
+        INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.  
+        We grant you a nonexclusive, royalty-free right to use and modify the sample code and to reproduce and distribute the object 
+        code form of the Sample Code, provided that you agree: 
+        (i)   to not use our name, logo, or trademarks to market your software product in which the sample code is embedded; 
+        (ii)  to include a valid copyright notice on your software product in which the sample code is embedded; and 
+        (iii) to indemnify, hold harmless, and defend us and our suppliers from and against any claims or lawsuits, including 
+            attorneys' fees, that arise or result from the use or distribution of the sample code.
+        Please note: None of the conditions outlined in the disclaimer above will supercede the terms and conditions contained within 
+                the Unified Customer Services Description.
+                
     .SYNOPSIS
         Processes Box collaboration data for a given user and resolves each item to its
         corresponding SharePoint list item ID in the user's OneDrive for Business library.
@@ -101,41 +114,77 @@ param
     [Parameter()]
     [System.IO.FileInfo] $InputFile = "C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv"
     ,
-    [Parameter()]
+    [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+    [Alias('Owner Login', 'User', 'UPN', 'Account')]
     [string] $UserToProcess = "AdilE@M365CPI19595461.OnMicrosoft.com"
     ,
     [Parameter()]
-    [String] $PersonalSiteRootUrl = "https://m365cpi19595461-my.sharepoint.com/personal/"
+    [string] $TenantAdminUrl = "https://m365cpi19595461-admin.sharepoint.com"
     ,
     [Parameter()]
     [string] $ClientId = "23d1b32e-e6fb-4c4e-9e0b-29d28b6bb563"
 ) # param
 process
 {
+    $PersonalSiteConnection = $null
     try
     {
+        # Ensure there is a tenant/admin-scoped PnP connection available for profile lookup.
+        # If none exists, create one using TenantAdminUrl.
+        $CurrentConnection = Get-PnPConnection -ErrorAction SilentlyContinue
+        if (-not $CurrentConnection)
+        {
+            $CurrentConnection = Connect-PnPOnline -Url $TenantAdminUrl -ClientId $ClientId -Interactive -ReturnConnection
+            Write-Verbose "Created new PnP connection for tenant admin URL $TenantAdminUrl"
+        }
+
+        # Resolve the user's OneDrive URL from SharePoint profile properties.
+        # This validates that the user profile exists and that PersonalSiteUrl is provisioned.
+        $PnPUserProfileProperties = Get-PnPUserProfileProperty -Account $UserToProcess -Connection $CurrentConnection
+        if (-not $PnPUserProfileProperties)
+        {
+            throw "No SharePoint user profile was returned for account '$UserToProcess'."
+        }
+
+        $PersonalSiteUrl = $PnPUserProfileProperties.PersonalSiteUrl
+        if ([string]::IsNullOrWhiteSpace($PersonalSiteUrl))
+        {
+            throw "User '$UserToProcess' does not have a PersonalSiteUrl. Ensure OneDrive is provisioned before running this script."
+        }
+
         # Import the CSV and filter to only rows owned by the target user.
         # Sorting by Item Name then Item Type ensures deterministic, readable output
         # and groups files and folders with the same name together.
-        $ItemsToProcess = Import-Csv -Path $InputFile.FullName | 
-                            Where-Object { $_."Owner Login" -eq $UserToProcess} |
+        $ItemsToProcess = Import-Csv -Path $InputFile.FullName |
+                            Where-Object { $_."Owner Login" -eq $UserToProcess } |
                                 Sort-Object -Property 'Item Name', 'Item Type'
+
+        if (-not $ItemsToProcess)
+        {
+            Write-Verbose "No CSV rows found for user $UserToProcess in $($InputFile.FullName)."
+            return
+        }
         
         # Surface a progress message when the caller uses -Verbose; does not print otherwise.
         Write-Verbose "Processing $($ItemsToProcess.Count) items from $($InputFile.FullName) for user $UserToProcess"
 
-        # SharePoint personal site URLs encode the user's UPN by replacing '@' and '.' with '_'.
-        # Example: AdilE@M365CPI19595461.OnMicrosoft.com -> AdilE_M365CPI19595461_OnMicrosoft_com
-        $escapedUserToProcess = ($UserToProcess).Replace('@','_').Replace('.','_')
-
-        # Combine the tenant root URL with the encoded UPN to form the full personal site URL.
-        # Example: https://m365cpi19595461-my.sharepoint.com/personal/AdilE_M365CPI19595461_OnMicrosoft_com
-        $PersonalSiteUrl = $PersonalSiteRootUrl + $escapedUserToProcess
-
         # Establish an authenticated PnP connection to the user's OneDrive for Business site.
         # -Interactive opens a browser window for the user to sign in (supports MFA).
         # -ClientId identifies the Azure AD app registration with pre-consented permissions.
-        Connect-PnPOnline -Url $PersonalSiteUrl -ClientId $ClientId -Interactive
+        $ExistingPersonalConnection = Get-PnPConnection -ErrorAction SilentlyContinue |
+                                        Where-Object { $_.Url -eq $PersonalSiteUrl } |
+                                            Select-Object -First 1
+
+        if ($ExistingPersonalConnection)
+        {
+            $PersonalSiteConnection = $ExistingPersonalConnection
+            Write-Verbose "Using existing PnP connection for $PersonalSiteUrl"
+        }
+        else
+        {
+            $PersonalSiteConnection = Connect-PnPOnline -Url $PersonalSiteUrl -ClientId $ClientId -Interactive -ReturnConnection
+            Write-Verbose "Created new PnP connection for $PersonalSiteUrl"
+        }
         
         ForEach ($Item in $ItemsToProcess) 
         {
@@ -173,14 +222,14 @@ process
                 # .LocalPath extracts the path portion from the [Uri] object, e.g.
                 # "/personal/AdilE_.../Documents/report.docx".
                 # -AsListItem returns a list item object whose .Id property is the numeric list item ID.
-                $PNPFile = Get-PnPFile -Url $processedItem.ItemUrl.LocalPath -AsListItem
+                $PNPFile = Get-PnPFile -Url $processedItem.ItemUrl.LocalPath -AsListItem -Connection $PersonalSiteConnection
                 $ProcessedItem.ListItemID = $PNPFile.Id
             } # if($ProcessedItem.'Item Type' -eq "File")
             else
             {
                 # For folders, use Get-PnPFolder instead. The same server-relative path
                 # convention applies; SharePoint distinguishes files and folders internally.
-                $PNPFolder = Get-PnPFolder -Url $processedItem.ItemUrl.LocalPath -AsListItem
+                $PNPFolder = Get-PnPFolder -Url $processedItem.ItemUrl.LocalPath -AsListItem -Connection $PersonalSiteConnection
                 $ProcessedItem.ListItemID = $PNPFolder.Id
             } # else
 
@@ -195,6 +244,14 @@ process
         # Surface the exception message as a non-terminating error so the caller's
         # error handling (e.g. $ErrorActionPreference) can respond appropriately.
         Write-Error $_.Exception.Message
+    }
+    finally
+    {
+        if ($PersonalSiteConnection)
+        {
+            Disconnect-PnPOnline -Connection $PersonalSiteConnection -ErrorAction SilentlyContinue
+            Write-Verbose "Disconnected PnP connection for $UserToProcess"
+        }
     }
 
 } # process
