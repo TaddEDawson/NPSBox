@@ -732,7 +732,43 @@ process
             throw "No SharePoint user profile was returned for account '$UserToProcess'."
         }
 
-        $PersonalSiteUrl = Resolve-SboPersonalSiteUrl -Profile $PnPUserProfileProperties
+        if (Get-Command -Name Resolve-SboPersonalSiteUrl -ErrorAction SilentlyContinue)
+        {
+            $PersonalSiteUrl = Resolve-SboPersonalSiteUrl -Profile $PnPUserProfileProperties
+        }
+        else
+        {
+            # Fallback path for sessions where the helper function is unavailable.
+            $PersonalSiteUrl = $null
+            $kvEntries = @($PnPUserProfileProperties | Where-Object {
+                $_ -and
+                $_.PSObject.Properties['Key'] -and
+                $_.PSObject.Properties['Value']
+            })
+
+            $personalUrlEntry = $kvEntries | Where-Object { $_.Key -eq 'PersonalUrl' } | Select-Object -First 1
+            if ($personalUrlEntry)
+            {
+                $PersonalSiteUrl = [string] $personalUrlEntry.Value
+            }
+
+            if ([string]::IsNullOrWhiteSpace($PersonalSiteUrl))
+            {
+                $hostEntry = $kvEntries | Where-Object { $_.Key -eq 'PersonalSiteHostUrl' } | Select-Object -First 1
+                $spaceEntry = $kvEntries | Where-Object { $_.Key -eq 'PersonalSpace' } | Select-Object -First 1
+                if ($hostEntry -and $spaceEntry)
+                {
+                    $hostUrl = [string] $hostEntry.Value
+                    $personalSpace = [string] $spaceEntry.Value
+                    if (-not [string]::IsNullOrWhiteSpace($hostUrl) -and -not [string]::IsNullOrWhiteSpace($personalSpace))
+                    {
+                        $hostAuthority = ([Uri] $hostUrl).GetLeftPart([System.UriPartial]::Authority)
+                        $normalizedPersonalSpace = if ($personalSpace.StartsWith('/')) { $personalSpace } else { '/' + $personalSpace }
+                        $PersonalSiteUrl = $hostAuthority + $normalizedPersonalSpace
+                    }
+                }
+            }
+        }
         if ([string]::IsNullOrWhiteSpace($PersonalSiteUrl))
         {
             Write-LogLine -Level ERROR -Message "PersonalSiteUrl is empty for account '$UserToProcess'."
