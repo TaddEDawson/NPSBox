@@ -225,6 +225,173 @@ param
 ) # param
 begin
 {
+    if (-not (Get-Command -Name Invoke-SboGetPnPConnection -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboGetPnPConnection
+        {
+            Get-PnPConnection -ErrorAction SilentlyContinue
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboConnectPnPOnline -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboConnectPnPOnline
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [string] $Url
+                ,
+                [Parameter(Mandatory = $true)]
+                [string] $ClientId
+            )
+
+            Connect-PnPOnline -Url $Url -ClientId $ClientId -Interactive -ReturnConnection
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboGetPnPUserProfileProperty -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboGetPnPUserProfileProperty
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [string] $Account
+                ,
+                [Parameter(Mandatory = $true)]
+                [object] $Connection
+            )
+
+            Get-PnPUserProfileProperty -Account $Account -Connection $Connection
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboGetPnPLists -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboGetPnPLists
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [object] $Connection
+            )
+
+            Get-PnPList -Connection $Connection
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboGetPnPListByIdentity -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboGetPnPListByIdentity
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [string] $Identity
+                ,
+                [Parameter(Mandatory = $true)]
+                [object] $Connection
+            )
+
+            Get-PnPList -Identity $Identity -Includes RootFolder -Connection $Connection -ErrorAction Stop
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboGetPnPProperty -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboGetPnPProperty
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [object] $ClientObject
+                ,
+                [Parameter(Mandatory = $true)]
+                [string] $Property
+                ,
+                [Parameter(Mandatory = $true)]
+                [object] $Connection
+            )
+
+            Get-PnPProperty -ClientObject $ClientObject -Property $Property -Connection $Connection | Out-Null
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboGetPnPFileAsListItem -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboGetPnPFileAsListItem
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [string] $Url
+                ,
+                [Parameter(Mandatory = $true)]
+                [object] $Connection
+            )
+
+            Get-PnPFile -Url $Url -AsListItem -Connection $Connection
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboGetPnPFolderAsListItem -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboGetPnPFolderAsListItem
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [string] $Url
+                ,
+                [Parameter(Mandatory = $true)]
+                [object] $Connection
+            )
+
+            Get-PnPFolder -Url $Url -AsListItem -Connection $Connection
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboSetPnPListItemPermission -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboSetPnPListItemPermission
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [string] $List
+                ,
+                [Parameter(Mandatory = $true)]
+                [int] $Identity
+                ,
+                [Parameter(Mandatory = $true)]
+                [string] $User
+                ,
+                [Parameter(Mandatory = $true)]
+                [string] $AddRole
+                ,
+                [Parameter(Mandatory = $true)]
+                [object] $Connection
+            )
+
+            Set-PnPListItemPermission -List $List -Identity $Identity -User $User -AddRole $AddRole -Connection $Connection -ErrorAction Stop | Out-Null
+        }
+    }
+
+    if (-not (Get-Command -Name Invoke-SboDisconnectPnPOnline -ErrorAction SilentlyContinue))
+    {
+        function Invoke-SboDisconnectPnPOnline
+        {
+            param
+            (
+                [Parameter(Mandatory = $true)]
+                [object] $Connection
+            )
+
+            Disconnect-PnPOnline -Connection $Connection -ErrorAction SilentlyContinue
+        }
+    }
+
     $ScriptStartTime = Get-Date
     $RunUserName = if ([string]::IsNullOrWhiteSpace($env:USERNAME)) { [Environment]::UserName } else { $env:USERNAME }
     $SafeRunUserName = ($RunUserName -replace '[^a-zA-Z0-9_.-]', '_')
@@ -295,10 +462,10 @@ process
     {
         # Ensure there is a tenant/admin-scoped PnP connection available for profile lookup.
         # If none exists, create one using TenantAdminUrl.
-        $CurrentConnection = Get-PnPConnection -ErrorAction SilentlyContinue
+        $CurrentConnection = Invoke-SboGetPnPConnection
         if (-not $CurrentConnection)
         {
-            $CurrentConnection = Connect-PnPOnline -Url $TenantAdminUrl -ClientId $ClientId -Interactive -ReturnConnection
+            $CurrentConnection = Invoke-SboConnectPnPOnline -Url $TenantAdminUrl -ClientId $ClientId
             $CreatedTenantConnection = $true
             Write-LogLine -Message "Created new tenant/admin PnP connection: $TenantAdminUrl"
         }
@@ -309,7 +476,7 @@ process
 
         # Resolve the user's OneDrive URL from SharePoint profile properties.
         # This validates that the user profile exists and that PersonalSiteUrl is provisioned.
-        $PnPUserProfileProperties = Get-PnPUserProfileProperty -Account $UserToProcess -Connection $CurrentConnection
+        $PnPUserProfileProperties = Invoke-SboGetPnPUserProfileProperty -Account $UserToProcess -Connection $CurrentConnection
         if (-not $PnPUserProfileProperties)
         {
             Write-LogLine -Level ERROR -Message "No SharePoint user profile returned for account '$UserToProcess'."
@@ -322,7 +489,7 @@ process
             Write-LogLine -Level ERROR -Message "PersonalSiteUrl is empty for account '$UserToProcess'."
             throw "User '$UserToProcess' does not have a PersonalSiteUrl. Ensure OneDrive is provisioned before running this script."
         }
-        Write-LogLine -Message "Resolved personal site URL for $UserToProcess: $PersonalSiteUrl"
+        Write-LogLine -Message "Resolved personal site URL for $($UserToProcess): $PersonalSiteUrl"
 
         # Import CSV rows for the target user, then deduplicate before processing updates.
         $UserRows = Import-Csv -Path $InputFile.FullName |
@@ -354,7 +521,7 @@ process
         # Reuse an existing personal-site PnP connection when available; otherwise create one.
         # -Interactive opens a browser window for the user to sign in (supports MFA).
         # -ClientId identifies the Azure AD app registration with pre-consented permissions.
-        $ExistingPersonalConnection = Get-PnPConnection -ErrorAction SilentlyContinue |
+        $ExistingPersonalConnection = Invoke-SboGetPnPConnection |
                                         Where-Object { $_.Url -eq $PersonalSiteUrl } |
                                             Select-Object -First 1
 
@@ -366,7 +533,7 @@ process
         }
         else
         {
-            $PersonalSiteConnection = Connect-PnPOnline -Url $PersonalSiteUrl -ClientId $ClientId -Interactive -ReturnConnection
+            $PersonalSiteConnection = Invoke-SboConnectPnPOnline -Url $PersonalSiteUrl -ClientId $ClientId
             $CreatedPersonalConnection = $true
             Write-LogLine -Message "Created new personal-site PnP connection: $PersonalSiteUrl"
             Write-Verbose "Created new PnP connection for $PersonalSiteUrl"
@@ -375,7 +542,7 @@ process
         # Resolve target document library details for item lookup and permission assignment.
         if ($AutoDiscoverDefaultLibrary)
         {
-            $ResolvedLibrary = Get-PnPList -Connection $PersonalSiteConnection |
+            $ResolvedLibrary = Invoke-SboGetPnPLists -Connection $PersonalSiteConnection |
                                 Where-Object { $_.BaseTemplate -eq 101 -and -not $_.Hidden } |
                                     Select-Object -First 1
 
@@ -384,12 +551,12 @@ process
                 throw "Unable to auto-discover a visible document library in personal site '$PersonalSiteUrl'."
             }
 
-            Get-PnPProperty -ClientObject $ResolvedLibrary -Property RootFolder -Connection $PersonalSiteConnection | Out-Null
+            Invoke-SboGetPnPProperty -ClientObject $ResolvedLibrary -Property RootFolder -Connection $PersonalSiteConnection
             $ResolvedLibraryTitle = $ResolvedLibrary.Title
         }
         else
         {
-            $ResolvedLibrary = Get-PnPList -Identity $TargetLibraryTitle -Includes RootFolder -Connection $PersonalSiteConnection -ErrorAction Stop
+            $ResolvedLibrary = Invoke-SboGetPnPListByIdentity -Identity $TargetLibraryTitle -Connection $PersonalSiteConnection
             $ResolvedLibraryTitle = $ResolvedLibrary.Title
         }
 
@@ -492,14 +659,14 @@ process
             {
                 # Retrieve the SharePoint list item for a file using its server-relative path.
                 # -AsListItem returns a list item object whose .Id property is the numeric list item ID.
-                $PNPFile = Get-PnPFile -Url $ItemServerRelativeUrl -AsListItem -Connection $PersonalSiteConnection
+                $PNPFile = Invoke-SboGetPnPFileAsListItem -Url $ItemServerRelativeUrl -Connection $PersonalSiteConnection
                 $ProcessedItem.ListItemID = $PNPFile.Id
             } # if($ProcessedItem.'Item Type' -eq "File")
             else
             {
                 # For folders, use Get-PnPFolder instead. The same server-relative path
                 # convention applies; SharePoint distinguishes files and folders internally.
-                $PNPFolder = Get-PnPFolder -Url $ItemServerRelativeUrl -AsListItem -Connection $PersonalSiteConnection
+                $PNPFolder = Invoke-SboGetPnPFolderAsListItem -Url $ItemServerRelativeUrl -Connection $PersonalSiteConnection
                 $ProcessedItem.ListItemID = $PNPFolder.Id
             } # else
 
@@ -525,7 +692,7 @@ process
             {
                 try
                 {
-                    Set-PnPListItemPermission -List $ResolvedLibraryTitle -Identity $ProcessedItem.ListItemID -User $ProcessedItem.'Collaborator Login' -AddRole $RoleDefinitionName -Connection $PersonalSiteConnection -ErrorAction Stop | Out-Null
+                    Invoke-SboSetPnPListItemPermission -List $ResolvedLibraryTitle -Identity $ProcessedItem.ListItemID -User $ProcessedItem.'Collaborator Login' -AddRole $RoleDefinitionName -Connection $PersonalSiteConnection
                     $ProcessedItem.PermissionChangeStatus = 'Applied'
                     Write-LogLine -Message "Applied role '$RoleDefinitionName' for '$($ProcessedItem.'Collaborator Login')' on '$($ProcessedItem.'Item Name')'."
                 }
@@ -568,19 +735,19 @@ process
         # Disconnect only connections created by this script invocation.
         if ($CreatedPersonalConnection -and $PersonalSiteConnection)
         {
-            Disconnect-PnPOnline -Connection $PersonalSiteConnection -ErrorAction SilentlyContinue
+            Invoke-SboDisconnectPnPOnline -Connection $PersonalSiteConnection
             Write-LogLine -Message "Disconnected personal-site PnP connection for user '$UserToProcess'."
             Write-Verbose "Disconnected PnP connection for $UserToProcess"
         }
 
         if ($CreatedTenantConnection -and $CurrentConnection)
         {
-            Disconnect-PnPOnline -Connection $CurrentConnection -ErrorAction SilentlyContinue
+            Invoke-SboDisconnectPnPOnline -Connection $CurrentConnection
             Write-LogLine -Message "Disconnected tenant/admin PnP connection for user '$UserToProcess'."
         }
 
         $UserDuration = New-TimeSpan -Start $UserStartTime -End (Get-Date)
-        Write-LogLine -Message ("END User Processing: UserToProcess={0}; Duration={1:hh\\:mm\\:ss\\.fff}" -f $UserToProcess, $UserDuration)
+        Write-LogLine -Message ("END User Processing: UserToProcess={0}; Duration={1:hh\:mm\:ss\.fff}" -f $UserToProcess, $UserDuration)
     }
 
 } # process
@@ -588,5 +755,5 @@ process
 end
 {
     $ScriptDuration = New-TimeSpan -Start $ScriptStartTime -End (Get-Date)
-    Write-LogLine -Message ("END Script: Duration={0:hh\\:mm\\:ss\\.fff}; LogFile={1}" -f $ScriptDuration, $LogFilePath)
+    Write-LogLine -Message ("END Script: Duration={0:hh\:mm\:ss\.fff}; LogFile={1}" -f $ScriptDuration, $LogFilePath)
 }
