@@ -34,10 +34,20 @@
         The output objects can be piped into downstream steps that apply SharePoint
         permissions, produce migration reports, or feed into other automation workflows.
 
-        Box permission names are translated to SharePoint equivalents as follows:
-          - "editor"  -> "Edit"
-          - "viewer"  -> "View"
-          - Anything else is passed through unchanged.
+                Box roles are translated to OneDrive roles as follows:
+                    - "Co-owner"            -> "Contributor"
+                    - "Editor"              -> "Contributor"
+                    - "Viewer Uploader"     -> "Viewer"
+                    - "Previewer Uploader"  -> "None"
+                    - "Viewer"              -> "Viewer"
+                    - "Previewer"           -> "None"
+                    - "Uploader"            -> "None"
+
+                OneDrive role values are then translated to SharePoint role definitions
+                when applying list item permissions:
+                    - "Contributor" -> "Contribute"
+                    - "Viewer"      -> "Read"
+                    - "None"        -> no permission assignment is performed
 
         IMPORTANT: Item names are used as-is to build the SharePoint URL. Items whose
         names contain characters that are invalid in SharePoint URLs (e.g. #, %, &) or
@@ -69,6 +79,11 @@
         be prompted to sign in interactively.
         Defaults to "23d1b32e-e6fb-4c4e-9e0b-29d28b6bb563".
 
+    .PARAMETER StrictRoleMapping
+        When provided, the script fails on any Box role value that is not present
+        in the documented Box-to-OneDrive mapping table.
+        Without this switch, unknown values are passed through unchanged.
+
     .INPUTS
         System.String
         You can pipe user login values into UserToProcess.
@@ -87,11 +102,11 @@
           Item Type               - "File" or "Folder" as reported in the Box export.
           Collaborator Login      - The Box login of the collaborator granted access.
           Collaborator Permission - The raw Box permission string (e.g. "editor", "viewer").
-          PermissionLevel         - Normalised SharePoint permission: "Edit", "View", or the
-                                    original value if no mapping is defined.
+          PermissionLevel         - Normalised OneDrive role: "Contributor", "Viewer", "None",
+                                    or the original value if no mapping is defined.
           ListItemID              - The SharePoint list item ID of the resolved item.
           PermissionChangeStatus  - Result of ShouldProcess evaluation for the permission action:
-                                    "Applied", "WhatIf", "Declined", or "Failed".
+                                    "Applied", "WhatIf", "Declined", "Skipped", or "Failed".
           PermissionChangeError   - Error message when a permission update fails; otherwise null.
 
     .EXAMPLE
@@ -124,6 +139,11 @@
 
         Prompts for confirmation before each evaluated permission change.
 
+    .EXAMPLE
+        .\test.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -StrictRoleMapping
+
+        Fails if any collaborator permission in the CSV is not in the known mapping table.
+
     .NOTES
         Prerequisites:
           - PnP.PowerShell module must be installed:
@@ -141,6 +161,7 @@
             construction logic if your migration preserves the full folder hierarchy.
                     - Permission assignment is applied using Set-PnPListItemPermission against the
                         user's Documents library list item ID.
+                    - Roles mapped to "None" are intentionally skipped and not assigned.
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param
@@ -157,6 +178,9 @@ param
     ,
     [Parameter()]
     [string] $ClientId = "23d1b32e-e6fb-4c4e-9e0b-29d28b6bb563"
+    ,
+    [Parameter()]
+    [switch] $StrictRoleMapping
 ) # param
 process
 {
@@ -222,6 +246,32 @@ process
         
         ForEach ($Item in $ItemsToProcess) 
         {
+            $RawCollaboratorPermission = [string] $Item.'Collaborator Permission'
+            $NormalizedCollaboratorPermission = $RawCollaboratorPermission.Trim().ToLowerInvariant()
+            $BoxToOneDriveRoleMap = @{
+                'co-owner'           = 'Contributor'
+                'editor'             = 'Contributor'
+                'viewer uploader'    = 'Viewer'
+                'previewer uploader' = 'None'
+                'viewer'             = 'Viewer'
+                'previewer'          = 'None'
+                'uploader'           = 'None'
+            }
+
+            if ($BoxToOneDriveRoleMap.ContainsKey($NormalizedCollaboratorPermission))
+            {
+                $MappedPermissionLevel = $BoxToOneDriveRoleMap[$NormalizedCollaboratorPermission]
+            }
+            else
+            {
+                if ($StrictRoleMapping)
+                {
+                    throw "Unknown Box role '$RawCollaboratorPermission' for item '$($Item.'Item Name')' and collaborator '$($Item.'Collaborator Login')'. Add a mapping or run without -StrictRoleMapping."
+                }
+
+                $MappedPermissionLevel = $RawCollaboratorPermission
+            }
+
             # Build a rich output object that combines the original Box metadata with
             # the derived SharePoint URL and the SharePoint list item ID (resolved below).
             $ProcessedItem = [PSCustomObject]@{
@@ -240,10 +290,8 @@ process
                 'Collaborator Login'        = $Item.'Collaborator Login'
                 'Collaborator Permission'   = $Item.'Collaborator Permission'
 
-                # Translate Box permission names to SharePoint permission level labels.
-                # "editor" maps to "Edit"; "viewer" maps to "View".
-                # Any unrecognised Box permission is passed through as-is for manual review.
-                PermissionLevel             = if ($Item.'Collaborator Permission' -match 'editor') { 'Edit' } elseif ($Item.'Collaborator Permission' -match 'viewer') { 'View' } else { $Item.'Collaborator Permission' }
+                # Translate Box role to normalized OneDrive role using documented mapping.
+                PermissionLevel             = $MappedPermissionLevel
 
                 # Placeholder; populated below once the SharePoint list item ID is resolved.
                 ListItemID                  = $null
@@ -272,7 +320,20 @@ process
             } # else
 
             # Apply permission updates under WhatIf/Confirm control.
-            $RoleDefinitionName = if ($ProcessedItem.PermissionLevel -eq 'View') { 'Read' } else { $ProcessedItem.PermissionLevel }
+            if ($ProcessedItem.PermissionLevel -eq 'None')
+            {
+                $ProcessedItem.PermissionChangeStatus = 'Skipped'
+                Write-Verbose "Skipping permission assignment for '$($ProcessedItem.'Collaborator Login')' because mapped role is 'None'."
+                Write-Output $ProcessedItem
+                continue
+            }
+
+            $RoleDefinitionName = switch ($ProcessedItem.PermissionLevel)
+            {
+                'Contributor' { 'Contribute' }
+                'Viewer'      { 'Read' }
+                default       { $ProcessedItem.PermissionLevel }
+            }
             $PermissionAction = "Apply role '$RoleDefinitionName' for collaborator '$($ProcessedItem.'Collaborator Login')'"
             $PermissionTarget = $ProcessedItem.ItemUrl.AbsoluteUri
             if ($PSCmdlet.ShouldProcess($PermissionTarget, $PermissionAction))
