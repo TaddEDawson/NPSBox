@@ -84,6 +84,20 @@
         in the documented Box-to-OneDrive mapping table.
         Without this switch, unknown values are passed through unchanged.
 
+    .PARAMETER LogFolder
+        Folder path where log files are written.
+        The script creates this folder if it does not exist.
+
+        A unique log file is created for each script run using the pattern:
+        Set-BoxToOneDriveItemPermission_<WindowsUserName>_<StartTimestamp>.log
+        where StartTimestamp uses the format yyyyMMdd_HHmmss_fff.
+
+        Each log line includes a timestamp, level, and message.
+        When -Verbose is supplied, every line written to the log file is also
+        written to verbose output.
+
+        Defaults to "C:\Temp".
+
     .INPUTS
         System.String
         You can pipe user login values into UserToProcess.
@@ -162,6 +176,8 @@
                     - Permission assignment is applied using Set-PnPListItemPermission against the
                         user's Documents library list item ID.
                     - Roles mapped to "None" are intentionally skipped and not assigned.
+                    - Logging records script begin/end, per-user begin/end, and key processing
+                        events, including durations.
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param
@@ -181,10 +197,50 @@ param
     ,
     [Parameter()]
     [switch] $StrictRoleMapping
+    ,
+    [Parameter()]
+    [string] $LogFolder = "C:\Temp"
 ) # param
+begin
+{
+    $ScriptStartTime = Get-Date
+    $RunUserName = if ([string]::IsNullOrWhiteSpace($env:USERNAME)) { [Environment]::UserName } else { $env:USERNAME }
+    $SafeRunUserName = ($RunUserName -replace '[^a-zA-Z0-9_.-]', '_')
+    $RunStartToken = $ScriptStartTime.ToString('yyyyMMdd_HHmmss_fff')
+
+    if (-not (Test-Path -LiteralPath $LogFolder))
+    {
+        New-Item -Path $LogFolder -ItemType Directory -Force | Out-Null
+    }
+
+    $LogFilePath = Join-Path -Path $LogFolder -ChildPath ("Set-BoxToOneDriveItemPermission_{0}_{1}.log" -f $SafeRunUserName, $RunStartToken)
+
+    function Write-LogLine
+    {
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $Message
+            ,
+            [Parameter()]
+            [ValidateSet('INFO', 'WARN', 'ERROR')]
+            [string] $Level = 'INFO'
+        )
+
+        $Line = "{0} [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffK'), $Level, $Message
+        Add-Content -LiteralPath $LogFilePath -Value $Line
+        Write-Verbose $Line
+    }
+
+    Write-LogLine -Message "BEGIN Script: User=$RunUserName, InputFile=$($InputFile.FullName), TenantAdminUrl=$TenantAdminUrl, StrictRoleMapping=$StrictRoleMapping"
+}
+
 process
 {
     $PersonalSiteConnection = $null
+    $UserStartTime = Get-Date
+    Write-LogLine -Message "BEGIN User Processing: UserToProcess=$UserToProcess"
+
     try
     {
         # Ensure there is a tenant/admin-scoped PnP connection available for profile lookup.
@@ -193,7 +249,11 @@ process
         if (-not $CurrentConnection)
         {
             $CurrentConnection = Connect-PnPOnline -Url $TenantAdminUrl -ClientId $ClientId -Interactive -ReturnConnection
-            Write-Verbose "Created new PnP connection for tenant admin URL $TenantAdminUrl"
+            Write-LogLine -Message "Created new tenant/admin PnP connection: $TenantAdminUrl"
+        }
+        else
+        {
+            Write-LogLine -Message "Reusing existing tenant/admin PnP connection."
         }
 
         # Resolve the user's OneDrive URL from SharePoint profile properties.
@@ -201,14 +261,17 @@ process
         $PnPUserProfileProperties = Get-PnPUserProfileProperty -Account $UserToProcess -Connection $CurrentConnection
         if (-not $PnPUserProfileProperties)
         {
+            Write-LogLine -Level ERROR -Message "No SharePoint user profile returned for account '$UserToProcess'."
             throw "No SharePoint user profile was returned for account '$UserToProcess'."
         }
 
         $PersonalSiteUrl = $PnPUserProfileProperties.PersonalSiteUrl
         if ([string]::IsNullOrWhiteSpace($PersonalSiteUrl))
         {
+            Write-LogLine -Level ERROR -Message "PersonalSiteUrl is empty for account '$UserToProcess'."
             throw "User '$UserToProcess' does not have a PersonalSiteUrl. Ensure OneDrive is provisioned before running this script."
         }
+        Write-LogLine -Message "Resolved personal site URL for $UserToProcess: $PersonalSiteUrl"
 
         # Import the CSV and filter to only rows owned by the target user.
         # Sorting by Item Name then Item Type ensures deterministic, readable output
@@ -219,12 +282,14 @@ process
 
         if (-not $ItemsToProcess)
         {
+            Write-LogLine -Level WARN -Message "No CSV rows found for user $UserToProcess in $($InputFile.FullName)."
             Write-Verbose "No CSV rows found for user $UserToProcess in $($InputFile.FullName)."
             return
         }
         
         # Surface a progress message when the caller uses -Verbose; does not print otherwise.
         Write-Verbose "Processing $($ItemsToProcess.Count) items from $($InputFile.FullName) for user $UserToProcess"
+        Write-LogLine -Message "Processing $($ItemsToProcess.Count) items for user $UserToProcess"
 
         # Reuse an existing personal-site PnP connection when available; otherwise create one.
         # -Interactive opens a browser window for the user to sign in (supports MFA).
@@ -236,11 +301,13 @@ process
         if ($ExistingPersonalConnection)
         {
             $PersonalSiteConnection = $ExistingPersonalConnection
+            Write-LogLine -Message "Reusing existing personal-site PnP connection: $PersonalSiteUrl"
             Write-Verbose "Using existing PnP connection for $PersonalSiteUrl"
         }
         else
         {
             $PersonalSiteConnection = Connect-PnPOnline -Url $PersonalSiteUrl -ClientId $ClientId -Interactive -ReturnConnection
+            Write-LogLine -Message "Created new personal-site PnP connection: $PersonalSiteUrl"
             Write-Verbose "Created new PnP connection for $PersonalSiteUrl"
         }
         
@@ -266,11 +333,15 @@ process
             {
                 if ($StrictRoleMapping)
                 {
+                    Write-LogLine -Level ERROR -Message "Unknown Box role '$RawCollaboratorPermission' for item '$($Item.'Item Name')' and collaborator '$($Item.'Collaborator Login')'."
                     throw "Unknown Box role '$RawCollaboratorPermission' for item '$($Item.'Item Name')' and collaborator '$($Item.'Collaborator Login')'. Add a mapping or run without -StrictRoleMapping."
                 }
 
+                Write-LogLine -Level WARN -Message "Unknown Box role '$RawCollaboratorPermission' encountered for item '$($Item.'Item Name')'; passing through unchanged."
                 $MappedPermissionLevel = $RawCollaboratorPermission
             }
+
+            Write-LogLine -Message "Processing item '$($Item.'Item Name')' ($($Item.'Item Type')) for collaborator '$($Item.'Collaborator Login')' with mapped role '$MappedPermissionLevel'."
 
             # Build a rich output object that combines the original Box metadata with
             # the derived SharePoint URL and the SharePoint list item ID (resolved below).
@@ -323,6 +394,7 @@ process
             if ($ProcessedItem.PermissionLevel -eq 'None')
             {
                 $ProcessedItem.PermissionChangeStatus = 'Skipped'
+                Write-LogLine -Message "Skipped permission assignment for '$($ProcessedItem.'Collaborator Login')' on '$($ProcessedItem.'Item Name')' because mapped role is 'None'."
                 Write-Verbose "Skipping permission assignment for '$($ProcessedItem.'Collaborator Login')' because mapped role is 'None'."
                 Write-Output $ProcessedItem
                 continue
@@ -342,11 +414,13 @@ process
                 {
                     Set-PnPListItemPermission -List 'Documents' -Identity $ProcessedItem.ListItemID -User $ProcessedItem.'Collaborator Login' -AddRole $RoleDefinitionName -Connection $PersonalSiteConnection -ErrorAction Stop | Out-Null
                     $ProcessedItem.PermissionChangeStatus = 'Applied'
+                    Write-LogLine -Message "Applied role '$RoleDefinitionName' for '$($ProcessedItem.'Collaborator Login')' on '$($ProcessedItem.'Item Name')'."
                 }
                 catch
                 {
                     $ProcessedItem.PermissionChangeStatus = 'Failed'
                     $ProcessedItem.PermissionChangeError = $_.Exception.Message
+                    Write-LogLine -Level ERROR -Message "Failed to apply role '$RoleDefinitionName' for '$($ProcessedItem.'Collaborator Login')' on '$($ProcessedItem.'Item Name')': $($ProcessedItem.PermissionChangeError)"
                 }
             }
             else
@@ -354,10 +428,12 @@ process
                 if ($WhatIfPreference)
                 {
                     $ProcessedItem.PermissionChangeStatus = 'WhatIf'
+                    Write-LogLine -Message "WhatIf: would apply role '$RoleDefinitionName' for '$($ProcessedItem.'Collaborator Login')' on '$($ProcessedItem.'Item Name')'."
                 }
                 else
                 {
                     $ProcessedItem.PermissionChangeStatus = 'Declined'
+                    Write-LogLine -Level WARN -Message "Declined: role '$RoleDefinitionName' for '$($ProcessedItem.'Collaborator Login')' on '$($ProcessedItem.'Item Name')'."
                 }
             }
 
@@ -369,6 +445,7 @@ process
     } # try
     catch
     {
+        Write-LogLine -Level ERROR -Message "Unhandled error while processing user '$UserToProcess': $($_.Exception.Message)"
         # Surface the exception message as a non-terminating error so the caller's
         # error handling (e.g. $ErrorActionPreference) can respond appropriately.
         Write-Error $_.Exception.Message
@@ -379,8 +456,18 @@ process
         if ($PersonalSiteConnection)
         {
             Disconnect-PnPOnline -Connection $PersonalSiteConnection -ErrorAction SilentlyContinue
+            Write-LogLine -Message "Disconnected personal-site PnP connection for user '$UserToProcess'."
             Write-Verbose "Disconnected PnP connection for $UserToProcess"
         }
+
+        $UserDuration = New-TimeSpan -Start $UserStartTime -End (Get-Date)
+        Write-LogLine -Message ("END User Processing: UserToProcess={0}; Duration={1:hh\\:mm\\:ss\\.fff}" -f $UserToProcess, $UserDuration)
     }
 
 } # process
+
+end
+{
+    $ScriptDuration = New-TimeSpan -Start $ScriptStartTime -End (Get-Date)
+    Write-LogLine -Message ("END Script: Duration={0:hh\\:mm\\:ss\\.fff}; LogFile={1}" -f $ScriptDuration, $LogFilePath)
+}
