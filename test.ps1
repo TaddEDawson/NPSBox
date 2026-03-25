@@ -19,12 +19,17 @@
 
     .DESCRIPTION
         This script reads a CSV export of Box collaboration data and filters it to the
-        specified Box user. For each file or folder owned by that user, it:
+                specified Box user. For each file or folder owned by that user, it:
+                    - Ensures a current PnP connection exists (or creates one to the tenant admin URL).
+                    - Resolves the user's SharePoint profile and validates PersonalSiteUrl exists.
           - Constructs the equivalent SharePoint/OneDrive URL based on the item name.
           - Connects to the user's OneDrive for Business personal site using PnP PowerShell.
           - Queries SharePoint to retrieve the list item ID for each file or folder.
+                    - Applies list item permissions for each collaborator using PowerShell
+                        ShouldProcess semantics (supports -WhatIf and -Confirm).
           - Emits a structured object per item containing the original Box metadata
-            alongside the resolved SharePoint list item ID and a normalised permission level.
+                        alongside the resolved SharePoint list item ID and a normalised permission level.
+                    - Closes the personal-site PnP connection when processing completes.
 
         The output objects can be piped into downstream steps that apply SharePoint
         permissions, produce migration reports, or feed into other automation workflows.
@@ -47,14 +52,15 @@
     .PARAMETER UserToProcess
         The Box login (email address) of the user whose items will be processed.
         Only rows where the "Owner Login" column matches this value are included.
+        This parameter accepts pipeline input directly and by property name.
+        Supported property aliases: "Owner Login", "User", "UPN", and "Account".
         Defaults to "AdilE@M365CPI19595461.OnMicrosoft.com".
 
-    .PARAMETER PersonalSiteRootUrl
-        The root URL of the SharePoint personal site collection (OneDrive for Business
-        tenant). The user's individual site URL is constructed by appending the
-        URL-encoded UPN to this root. The '@' and '.' characters in the UPN are
-        replaced with underscores to match SharePoint's naming convention.
-        Defaults to "https://m365cpi19595461-my.sharepoint.com/personal/".
+    .PARAMETER TenantAdminUrl
+        SharePoint tenant admin URL used when no current PnP connection exists.
+        The script uses this URL to create a connection required for
+        Get-PnPUserProfileProperty profile lookups.
+        Defaults to "https://m365cpi19595461-admin.sharepoint.com".
 
     .PARAMETER ClientId
         The Application (Client) ID of the Azure AD app registration used to
@@ -64,7 +70,12 @@
         Defaults to "23d1b32e-e6fb-4c4e-9e0b-29d28b6bb563".
 
     .INPUTS
-        None. This script does not accept pipeline input.
+        System.String
+        You can pipe user login values into UserToProcess.
+
+        PSCustomObject
+        You can pipe objects that expose one of the following properties:
+        "Owner Login", "User", "UPN", or "Account".
 
     .OUTPUTS
         PSCustomObject
@@ -79,6 +90,9 @@
           PermissionLevel         - Normalised SharePoint permission: "Edit", "View", or the
                                     original value if no mapping is defined.
           ListItemID              - The SharePoint list item ID of the resolved item.
+          PermissionChangeStatus  - Result of ShouldProcess evaluation for the permission action:
+                                    "Applied", "WhatIf", "Declined", or "Failed".
+          PermissionChangeError   - Error message when a permission update fails; otherwise null.
 
     .EXAMPLE
         .\test.ps1 -Verbose
@@ -88,11 +102,27 @@
 
     .EXAMPLE
         .\test.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" `
-                   -PersonalSiteRootUrl "https://contoso-my.sharepoint.com/personal/" |
+                   -TenantAdminUrl "https://contoso-admin.sharepoint.com" |
             Export-Csv -Path "C:\Output\JaneDSharePointItems.csv" -NoTypeInformation
 
         Processes Box collaboration data for a different user and exports the resolved
         SharePoint item details to a CSV file for review or further processing.
+
+    .EXAMPLE
+        "JaneD@contoso.OnMicrosoft.com", "AlexW@contoso.OnMicrosoft.com" |
+            .\test.ps1 -InputFile "C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv" -Verbose
+
+        Processes multiple users by piping user principal names into UserToProcess.
+
+    .EXAMPLE
+        .\test.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -WhatIf -Verbose
+
+        Shows the permission changes that would be made without approving them.
+
+    .EXAMPLE
+        .\test.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -Confirm
+
+        Prompts for confirmation before each evaluated permission change.
 
     .NOTES
         Prerequisites:
@@ -100,6 +130,8 @@
               Install-Module PnP.PowerShell -Scope CurrentUser
           - Microsoft.Online.SharePoint.PowerShell module must be installed:
               Install-Module Microsoft.Online.SharePoint.PowerShell -Scope CurrentUser
+                    - The account used for interactive sign-in must be allowed to read user
+                        profile properties and access target OneDrive content.
           - The Azure AD app registration identified by -ClientId must exist and have
             appropriate SharePoint permissions consented by an administrator.
           - The target user's OneDrive for Business site must have been provisioned
@@ -107,8 +139,10 @@
           - Items are looked up by name only; nested Box folder paths are not
             reflected in the constructed SharePoint URL. Adjust the ItemUrl
             construction logic if your migration preserves the full folder hierarchy.
+                    - Permission assignment is applied using Set-PnPListItemPermission against the
+                        user's Documents library list item ID.
 #>
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param
 (
     [Parameter()]
@@ -168,7 +202,7 @@ process
         # Surface a progress message when the caller uses -Verbose; does not print otherwise.
         Write-Verbose "Processing $($ItemsToProcess.Count) items from $($InputFile.FullName) for user $UserToProcess"
 
-        # Establish an authenticated PnP connection to the user's OneDrive for Business site.
+        # Reuse an existing personal-site PnP connection when available; otherwise create one.
         # -Interactive opens a browser window for the user to sign in (supports MFA).
         # -ClientId identifies the Azure AD app registration with pre-consented permissions.
         $ExistingPersonalConnection = Get-PnPConnection -ErrorAction SilentlyContinue |
@@ -214,6 +248,10 @@ process
                 # Placeholder; populated below once the SharePoint list item ID is resolved.
                 ListItemID                  = $null
 
+                # Set after ShouldProcess evaluates and applies the permission change.
+                PermissionChangeStatus      = $null
+                PermissionChangeError       = $null
+
             } # ProcessedItem
             
             if($ProcessedItem.'Item Type' -eq "File")
@@ -233,6 +271,35 @@ process
                 $ProcessedItem.ListItemID = $PNPFolder.Id
             } # else
 
+            # Apply permission updates under WhatIf/Confirm control.
+            $RoleDefinitionName = if ($ProcessedItem.PermissionLevel -eq 'View') { 'Read' } else { $ProcessedItem.PermissionLevel }
+            $PermissionAction = "Apply role '$RoleDefinitionName' for collaborator '$($ProcessedItem.'Collaborator Login')'"
+            $PermissionTarget = $ProcessedItem.ItemUrl.AbsoluteUri
+            if ($PSCmdlet.ShouldProcess($PermissionTarget, $PermissionAction))
+            {
+                try
+                {
+                    Set-PnPListItemPermission -List 'Documents' -Identity $ProcessedItem.ListItemID -User $ProcessedItem.'Collaborator Login' -AddRole $RoleDefinitionName -Connection $PersonalSiteConnection -ErrorAction Stop | Out-Null
+                    $ProcessedItem.PermissionChangeStatus = 'Applied'
+                }
+                catch
+                {
+                    $ProcessedItem.PermissionChangeStatus = 'Failed'
+                    $ProcessedItem.PermissionChangeError = $_.Exception.Message
+                }
+            }
+            else
+            {
+                if ($WhatIfPreference)
+                {
+                    $ProcessedItem.PermissionChangeStatus = 'WhatIf'
+                }
+                else
+                {
+                    $ProcessedItem.PermissionChangeStatus = 'Declined'
+                }
+            }
+
             # Emit the completed object to the pipeline. Callers can pipe this output
             # to Export-Csv, Format-Table, or further permission-assignment steps.
             Write-Output $ProcessedItem
@@ -247,6 +314,7 @@ process
     }
     finally
     {
+        # Disconnect the personal-site connection used in this process iteration.
         if ($PersonalSiteConnection)
         {
             Disconnect-PnPOnline -Connection $PersonalSiteConnection -ErrorAction SilentlyContinue
