@@ -79,10 +79,20 @@
         be prompted to sign in interactively.
         Defaults to "23d1b32e-e6fb-4c4e-9e0b-29d28b6bb563".
 
-    .PARAMETER StrictRoleMapping
-        When provided, the script fails on any Box role value that is not present
-        in the documented Box-to-OneDrive mapping table.
-        Without this switch, unknown values are passed through unchanged.
+    .PARAMETER AllowUnknownRole
+        Allows collaborator roles that are not present in the documented
+        Box-to-OneDrive mapping table.
+        By default, unknown role values cause the script to fail fast.
+
+    .PARAMETER TargetLibraryTitle
+        Title of the OneDrive document library where migrated items are expected.
+        This title is used for list item permission assignment and path resolution.
+        Defaults to "Documents".
+
+    .PARAMETER AutoDiscoverDefaultLibrary
+        When provided, the script discovers the first visible document library
+        (BaseTemplate 101) in the target personal site and uses it instead of
+        TargetLibraryTitle.
 
     .PARAMETER LogFolder
         Folder path where log files are written.
@@ -124,13 +134,13 @@
           PermissionChangeError   - Error message when a permission update fails; otherwise null.
 
     .EXAMPLE
-        .\test.ps1 -Verbose
+        .\Set-BoxToOneDriveItemPermission.ps1 -Verbose
 
         Runs the script with default parameters and prints verbose progress messages
         showing how many items are being processed.
 
     .EXAMPLE
-        .\test.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" `
+        .\Set-BoxToOneDriveItemPermission.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" `
                    -TenantAdminUrl "https://contoso-admin.sharepoint.com" |
             Export-Csv -Path "C:\Output\JaneDSharePointItems.csv" -NoTypeInformation
 
@@ -139,24 +149,29 @@
 
     .EXAMPLE
         "JaneD@contoso.OnMicrosoft.com", "AlexW@contoso.OnMicrosoft.com" |
-            .\test.ps1 -InputFile "C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv" -Verbose
+            .\Set-BoxToOneDriveItemPermission.ps1 -InputFile "C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv" -Verbose
 
         Processes multiple users by piping user principal names into UserToProcess.
 
     .EXAMPLE
-        .\test.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -WhatIf -Verbose
+        .\Set-BoxToOneDriveItemPermission.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -WhatIf -Verbose
 
         Shows the permission changes that would be made without approving them.
 
     .EXAMPLE
-        .\test.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -Confirm
+        .\Set-BoxToOneDriveItemPermission.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -Confirm
 
         Prompts for confirmation before each evaluated permission change.
 
     .EXAMPLE
-        .\test.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -StrictRoleMapping
+        .\Set-BoxToOneDriveItemPermission.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -AllowUnknownRole
 
-        Fails if any collaborator permission in the CSV is not in the known mapping table.
+        Processes rows containing unknown collaborator roles by passing those role values through.
+
+    .EXAMPLE
+        .\Set-BoxToOneDriveItemPermission.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -AutoDiscoverDefaultLibrary
+
+        Uses the first visible document library in the personal site rather than the TargetLibraryTitle value.
 
     .NOTES
         Prerequisites:
@@ -176,6 +191,7 @@
                     - Permission assignment is applied using Set-PnPListItemPermission against the
                         user's Documents library list item ID.
                     - Roles mapped to "None" are intentionally skipped and not assigned.
+                    - Input rows are deduplicated before permission updates are attempted.
                     - Logging records script begin/end, per-user begin/end, and key processing
                         events, including durations.
 #>
@@ -196,7 +212,13 @@ param
     [string] $ClientId = "23d1b32e-e6fb-4c4e-9e0b-29d28b6bb563"
     ,
     [Parameter()]
-    [switch] $StrictRoleMapping
+    [switch] $AllowUnknownRole
+    ,
+    [Parameter()]
+    [string] $TargetLibraryTitle = "Documents"
+    ,
+    [Parameter()]
+    [switch] $AutoDiscoverDefaultLibrary
     ,
     [Parameter()]
     [string] $LogFolder = "C:\Temp"
@@ -208,12 +230,20 @@ begin
     $SafeRunUserName = ($RunUserName -replace '[^a-zA-Z0-9_.-]', '_')
     $RunStartToken = $ScriptStartTime.ToString('yyyyMMdd_HHmmss_fff')
 
-    if (-not (Test-Path -LiteralPath $LogFolder))
+    $LogFilePath = $null
+    try
     {
-        New-Item -Path $LogFolder -ItemType Directory -Force | Out-Null
-    }
+        if (-not (Test-Path -LiteralPath $LogFolder))
+        {
+            New-Item -Path $LogFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        }
 
-    $LogFilePath = Join-Path -Path $LogFolder -ChildPath ("Set-BoxToOneDriveItemPermission_{0}_{1}.log" -f $SafeRunUserName, $RunStartToken)
+        $LogFilePath = Join-Path -Path $LogFolder -ChildPath ("Set-BoxToOneDriveItemPermission_{0}_{1}.log" -f $SafeRunUserName, $RunStartToken)
+    }
+    catch
+    {
+        Write-Warning "Logging setup failed for folder '$LogFolder': $($_.Exception.Message)"
+    }
 
     function Write-LogLine
     {
@@ -228,16 +258,36 @@ begin
         )
 
         $Line = "{0} [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffK'), $Level, $Message
-        Add-Content -LiteralPath $LogFilePath -Value $Line
         Write-Verbose $Line
+
+        if (-not [string]::IsNullOrWhiteSpace($LogFilePath))
+        {
+            try
+            {
+                Add-Content -LiteralPath $LogFilePath -Value $Line -ErrorAction Stop
+            }
+            catch
+            {
+                Write-Warning "Log write failed for '$LogFilePath': $($_.Exception.Message)"
+                Write-Warning $Line
+            }
+        }
+        else
+        {
+            Write-Warning "Log file path is not available; log line written to warning stream only."
+            Write-Warning $Line
+        }
     }
 
-    Write-LogLine -Message "BEGIN Script: User=$RunUserName, InputFile=$($InputFile.FullName), TenantAdminUrl=$TenantAdminUrl, StrictRoleMapping=$StrictRoleMapping"
+    Write-LogLine -Message "BEGIN Script: User=$RunUserName, InputFile=$($InputFile.FullName), TenantAdminUrl=$TenantAdminUrl, AllowUnknownRole=$AllowUnknownRole, TargetLibraryTitle=$TargetLibraryTitle, AutoDiscoverDefaultLibrary=$AutoDiscoverDefaultLibrary"
 }
 
 process
 {
     $PersonalSiteConnection = $null
+    $CurrentConnection = $null
+    $CreatedTenantConnection = $false
+    $CreatedPersonalConnection = $false
     $UserStartTime = Get-Date
     Write-LogLine -Message "BEGIN User Processing: UserToProcess=$UserToProcess"
 
@@ -249,6 +299,7 @@ process
         if (-not $CurrentConnection)
         {
             $CurrentConnection = Connect-PnPOnline -Url $TenantAdminUrl -ClientId $ClientId -Interactive -ReturnConnection
+            $CreatedTenantConnection = $true
             Write-LogLine -Message "Created new tenant/admin PnP connection: $TenantAdminUrl"
         }
         else
@@ -273,18 +324,27 @@ process
         }
         Write-LogLine -Message "Resolved personal site URL for $UserToProcess: $PersonalSiteUrl"
 
-        # Import the CSV and filter to only rows owned by the target user.
-        # Sorting by Item Name then Item Type ensures deterministic, readable output
-        # and groups files and folders with the same name together.
-        $ItemsToProcess = Import-Csv -Path $InputFile.FullName |
-                            Where-Object { $_."Owner Login" -eq $UserToProcess } |
-                                Sort-Object -Property 'Item Name', 'Item Type'
+        # Import CSV rows for the target user, then deduplicate before processing updates.
+        $UserRows = Import-Csv -Path $InputFile.FullName |
+                    Where-Object { $_."Owner Login" -eq $UserToProcess }
+
+        $ItemsToProcess = $UserRows |
+                            Group-Object -Property 'Owner Login', 'Path', 'Item Name', 'Item Type', 'Collaborator Login', 'Collaborator Permission' |
+                                ForEach-Object { $_.Group | Select-Object -First 1 } |
+                                    Sort-Object -Property 'Item Name', 'Item Type'
+
+        $DuplicateCount = @($UserRows).Count - @($ItemsToProcess).Count
 
         if (-not $ItemsToProcess)
         {
             Write-LogLine -Level WARN -Message "No CSV rows found for user $UserToProcess in $($InputFile.FullName)."
             Write-Verbose "No CSV rows found for user $UserToProcess in $($InputFile.FullName)."
             return
+        }
+
+        if ($DuplicateCount -gt 0)
+        {
+            Write-LogLine -Level WARN -Message "Removed $DuplicateCount duplicate row(s) for user $UserToProcess before permission processing."
         }
         
         # Surface a progress message when the caller uses -Verbose; does not print otherwise.
@@ -307,9 +367,39 @@ process
         else
         {
             $PersonalSiteConnection = Connect-PnPOnline -Url $PersonalSiteUrl -ClientId $ClientId -Interactive -ReturnConnection
+            $CreatedPersonalConnection = $true
             Write-LogLine -Message "Created new personal-site PnP connection: $PersonalSiteUrl"
             Write-Verbose "Created new PnP connection for $PersonalSiteUrl"
         }
+
+        # Resolve target document library details for item lookup and permission assignment.
+        if ($AutoDiscoverDefaultLibrary)
+        {
+            $ResolvedLibrary = Get-PnPList -Connection $PersonalSiteConnection |
+                                Where-Object { $_.BaseTemplate -eq 101 -and -not $_.Hidden } |
+                                    Select-Object -First 1
+
+            if (-not $ResolvedLibrary)
+            {
+                throw "Unable to auto-discover a visible document library in personal site '$PersonalSiteUrl'."
+            }
+
+            Get-PnPProperty -ClientObject $ResolvedLibrary -Property RootFolder -Connection $PersonalSiteConnection | Out-Null
+            $ResolvedLibraryTitle = $ResolvedLibrary.Title
+        }
+        else
+        {
+            $ResolvedLibrary = Get-PnPList -Identity $TargetLibraryTitle -Includes RootFolder -Connection $PersonalSiteConnection -ErrorAction Stop
+            $ResolvedLibraryTitle = $ResolvedLibrary.Title
+        }
+
+        $ResolvedLibraryRootServerRelativeUrl = $ResolvedLibrary.RootFolder.ServerRelativeUrl
+        if ([string]::IsNullOrWhiteSpace($ResolvedLibraryRootServerRelativeUrl))
+        {
+            throw "Unable to resolve RootFolder.ServerRelativeUrl for library '$ResolvedLibraryTitle'."
+        }
+
+        Write-LogLine -Message "Using target library '$ResolvedLibraryTitle' with root path '$ResolvedLibraryRootServerRelativeUrl'."
         
         ForEach ($Item in $ItemsToProcess) 
         {
@@ -331,15 +421,41 @@ process
             }
             else
             {
-                if ($StrictRoleMapping)
+                if (-not $AllowUnknownRole)
                 {
                     Write-LogLine -Level ERROR -Message "Unknown Box role '$RawCollaboratorPermission' for item '$($Item.'Item Name')' and collaborator '$($Item.'Collaborator Login')'."
-                    throw "Unknown Box role '$RawCollaboratorPermission' for item '$($Item.'Item Name')' and collaborator '$($Item.'Collaborator Login')'. Add a mapping or run without -StrictRoleMapping."
+                    throw "Unknown Box role '$RawCollaboratorPermission' for item '$($Item.'Item Name')' and collaborator '$($Item.'Collaborator Login')'. Add a mapping or run with -AllowUnknownRole."
                 }
 
                 Write-LogLine -Level WARN -Message "Unknown Box role '$RawCollaboratorPermission' encountered for item '$($Item.'Item Name')'; passing through unchanged."
                 $MappedPermissionLevel = $RawCollaboratorPermission
             }
+
+            $PathValue = [string] $Item.'Path'
+            $NormalizedPath = ($PathValue -replace '\\', '/').Trim()
+            $PathSegments = @()
+            if (-not [string]::IsNullOrWhiteSpace($NormalizedPath))
+            {
+                $PathSegments = @($NormalizedPath.Split('/', [System.StringSplitOptions]::RemoveEmptyEntries))
+            }
+
+            if ($PathSegments.Count -gt 0 -and $PathSegments[0].Equals($ResolvedLibraryTitle, [System.StringComparison]::OrdinalIgnoreCase))
+            {
+                if ($PathSegments.Count -gt 1)
+                {
+                    $PathSegments = @($PathSegments[1..($PathSegments.Count - 1)])
+                }
+                else
+                {
+                    $PathSegments = @()
+                }
+            }
+
+            $ItemNameSegment = [string] $Item.'Item Name'
+            $AllPathSegments = @($PathSegments + $ItemNameSegment)
+            $EncodedRelativePath = ($AllPathSegments | ForEach-Object { [Uri]::EscapeDataString([string] $_) }) -join '/'
+            $ItemServerRelativeUrl = ($ResolvedLibraryRootServerRelativeUrl.TrimEnd('/') + '/' + $EncodedRelativePath)
+            $ItemAbsoluteUrl = ("{0}{1}" -f ([Uri] $PersonalSiteUrl).GetLeftPart([System.UriPartial]::Authority), $ItemServerRelativeUrl)
 
             Write-LogLine -Message "Processing item '$($Item.'Item Name')' ($($Item.'Item Type')) for collaborator '$($Item.'Collaborator Login')' with mapped role '$MappedPermissionLevel'."
 
@@ -351,10 +467,9 @@ process
                 'Owner Login'               = $Item.'Owner Login'
                 'Path'                      = $Item.'Path'
 
-                # Construct the full SharePoint URL for this item by appending the item
-                # name to the user's Documents library path. Casting to [Uri] enables
-                # clean extraction of the server-relative path via .LocalPath later.
-                'ItemUrl'                   = ([Uri] ($PersonalSiteUrl + "/Documents/" + $Item.'Item Name'))
+                # Build a full item URL from library root + Box path + item name.
+                # Each segment is URL-encoded to safely resolve special characters.
+                'ItemUrl'                   = ([Uri] $ItemAbsoluteUrl)
 
                 'Item Name'                 = $Item.'Item Name'
                 'Item Type'                 = $Item.'Item Type'
@@ -376,17 +491,15 @@ process
             if($ProcessedItem.'Item Type' -eq "File")
             {
                 # Retrieve the SharePoint list item for a file using its server-relative path.
-                # .LocalPath extracts the path portion from the [Uri] object, e.g.
-                # "/personal/AdilE_.../Documents/report.docx".
                 # -AsListItem returns a list item object whose .Id property is the numeric list item ID.
-                $PNPFile = Get-PnPFile -Url $processedItem.ItemUrl.LocalPath -AsListItem -Connection $PersonalSiteConnection
+                $PNPFile = Get-PnPFile -Url $ItemServerRelativeUrl -AsListItem -Connection $PersonalSiteConnection
                 $ProcessedItem.ListItemID = $PNPFile.Id
             } # if($ProcessedItem.'Item Type' -eq "File")
             else
             {
                 # For folders, use Get-PnPFolder instead. The same server-relative path
                 # convention applies; SharePoint distinguishes files and folders internally.
-                $PNPFolder = Get-PnPFolder -Url $processedItem.ItemUrl.LocalPath -AsListItem -Connection $PersonalSiteConnection
+                $PNPFolder = Get-PnPFolder -Url $ItemServerRelativeUrl -AsListItem -Connection $PersonalSiteConnection
                 $ProcessedItem.ListItemID = $PNPFolder.Id
             } # else
 
@@ -412,7 +525,7 @@ process
             {
                 try
                 {
-                    Set-PnPListItemPermission -List 'Documents' -Identity $ProcessedItem.ListItemID -User $ProcessedItem.'Collaborator Login' -AddRole $RoleDefinitionName -Connection $PersonalSiteConnection -ErrorAction Stop | Out-Null
+                    Set-PnPListItemPermission -List $ResolvedLibraryTitle -Identity $ProcessedItem.ListItemID -User $ProcessedItem.'Collaborator Login' -AddRole $RoleDefinitionName -Connection $PersonalSiteConnection -ErrorAction Stop | Out-Null
                     $ProcessedItem.PermissionChangeStatus = 'Applied'
                     Write-LogLine -Message "Applied role '$RoleDefinitionName' for '$($ProcessedItem.'Collaborator Login')' on '$($ProcessedItem.'Item Name')'."
                 }
@@ -452,12 +565,18 @@ process
     }
     finally
     {
-        # Disconnect the personal-site connection used in this process iteration.
-        if ($PersonalSiteConnection)
+        # Disconnect only connections created by this script invocation.
+        if ($CreatedPersonalConnection -and $PersonalSiteConnection)
         {
             Disconnect-PnPOnline -Connection $PersonalSiteConnection -ErrorAction SilentlyContinue
             Write-LogLine -Message "Disconnected personal-site PnP connection for user '$UserToProcess'."
             Write-Verbose "Disconnected PnP connection for $UserToProcess"
+        }
+
+        if ($CreatedTenantConnection -and $CurrentConnection)
+        {
+            Disconnect-PnPOnline -Connection $CurrentConnection -ErrorAction SilentlyContinue
+            Write-LogLine -Message "Disconnected tenant/admin PnP connection for user '$UserToProcess'."
         }
 
         $UserDuration = New-TimeSpan -Start $UserStartTime -End (Get-Date)
