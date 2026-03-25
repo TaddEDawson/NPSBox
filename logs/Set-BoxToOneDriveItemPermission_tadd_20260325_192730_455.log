@@ -1,0 +1,5 @@
+2026-03-25T19:27:30.456-04:00 [INFO] BEGIN Script: User=tadd, InputFile=C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv, TenantAdminUrl=https://m365cpi19595461-admin.sharepoint.com, AllowUnknownRole=False, TargetLibraryTitle=Documents, AutoDiscoverDefaultLibrary=False
+2026-03-25T19:27:30.459-04:00 [INFO] BEGIN User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com
+2026-03-25T19:27:30.488-04:00 [ERROR] Unhandled error while processing user 'AdilE@M365CPI19595461.OnMicrosoft.com': You are not signed in. Please use Connect-PnPOnline to connect.
+2026-03-25T19:27:30.646-04:00 [INFO] END User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com; Duration=00:00:00.186
+2026-03-25T19:27:30.673-04:00 [INFO] END Script: Duration=00:00:00.218; LogFile=C:\Repos\NPSBox\Logs\Set-BoxToOneDriveItemPermission_tadd_20260325_192730_455.log

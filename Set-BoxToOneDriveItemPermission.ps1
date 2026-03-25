@@ -7,7 +7,7 @@
     .DESCRIPTION
         This script reads a CSV export of Box collaboration data and filters it to the
                 specified Box user. For each file or folder owned by that user, it:
-                    - Ensures a current PnP connection exists (or creates one to the tenant admin URL).
+                    - Ensures a current PnP connection exists (or creates one to the My Site host URL).
                     - Resolves the user's SharePoint profile and validates PersonalSiteUrl exists.
           - Constructs the equivalent SharePoint/OneDrive URL based on the item name.
           - Connects to the user's OneDrive for Business personal site using PnP PowerShell.
@@ -53,11 +53,11 @@
         Supported property aliases: "Owner Login", "User", "UPN", and "Account".
         Defaults to "AdilE@M365CPI19595461.OnMicrosoft.com".
 
-    .PARAMETER TenantAdminUrl
-        SharePoint tenant admin URL used when no current PnP connection exists.
+    .PARAMETER MySiteHostUrl
+        SharePoint My Site host URL used when no current PnP connection exists.
         The script uses this URL to create a connection required for
         Get-PnPUserProfileProperty profile lookups.
-        Defaults to "https://m365cpi19595461-admin.sharepoint.com".
+        Defaults to "https://m365cpi19595461-my.sharepoint.com".
 
     .PARAMETER ClientId
         The Application (Client) ID of the Azure AD app registration used to
@@ -128,7 +128,7 @@
 
     .EXAMPLE
         .\Set-BoxToOneDriveItemPermission.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" `
-                   -TenantAdminUrl "https://contoso-admin.sharepoint.com" |
+                 -MySiteHostUrl "https://contoso-my.sharepoint.com" |
             Export-Csv -Path "C:\Output\JaneDSharePointItems.csv" -NoTypeInformation
 
         Processes Box collaboration data for a different user and exports the resolved
@@ -206,7 +206,7 @@ param
     [string] $UserToProcess = "AdilE@M365CPI19595461.OnMicrosoft.com"
     ,
     [Parameter()]
-    [string] $TenantAdminUrl = "https://m365cpi19595461-admin.sharepoint.com"
+    [string] $MySiteHostUrl = "https://m365cpi19595461-my.sharepoint.com"
     ,
     [Parameter()]
     [string] $ClientId = "23d1b32e-e6fb-4c4e-9e0b-29d28b6bb563"
@@ -229,6 +229,16 @@ begin
     {
         function Invoke-SboGetPnPConnection
         {
+            <#
+            .SYNOPSIS
+                Returns the current PnP connection if one exists.
+
+            .OUTPUTS
+                Object
+            #>
+            [CmdletBinding()]
+            param()
+
             Get-PnPConnection -ErrorAction SilentlyContinue
         }
     }
@@ -237,6 +247,20 @@ begin
     {
         function Invoke-SboConnectPnPOnline
         {
+            <#
+            .SYNOPSIS
+                Creates an interactive PnP connection and returns it.
+
+            .PARAMETER Url
+                SharePoint URL to connect to.
+
+            .PARAMETER ClientId
+                Azure AD application client ID for authentication.
+
+            .OUTPUTS
+                Object
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -254,6 +278,20 @@ begin
     {
         function Invoke-SboGetPnPUserProfileProperty
         {
+            <#
+            .SYNOPSIS
+                Retrieves SharePoint user profile properties for the specified account.
+
+            .PARAMETER Account
+                User principal name to query.
+
+            .PARAMETER Connection
+                Active PnP connection used to perform the query.
+
+            .OUTPUTS
+                Object
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -271,6 +309,17 @@ begin
     {
         function Invoke-SboGetPnPLists
         {
+            <#
+            .SYNOPSIS
+                Returns SharePoint lists visible through the supplied connection.
+
+            .PARAMETER Connection
+                Active PnP connection used to retrieve lists.
+
+            .OUTPUTS
+                Object[]
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -285,6 +334,20 @@ begin
     {
         function Invoke-SboGetPnPListByIdentity
         {
+            <#
+            .SYNOPSIS
+                Retrieves a SharePoint list by title or identity.
+
+            .PARAMETER Identity
+                List title or identity value.
+
+            .PARAMETER Connection
+                Active PnP connection used to retrieve the list.
+
+            .OUTPUTS
+                Object
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -302,6 +365,20 @@ begin
     {
         function Invoke-SboGetPnPProperty
         {
+            <#
+            .SYNOPSIS
+                Loads a deferred property on a SharePoint client object.
+
+            .PARAMETER ClientObject
+                Client-side object that contains the deferred property.
+
+            .PARAMETER Property
+                Name of the property to load.
+
+            .PARAMETER Connection
+                Active PnP connection used to load the property.
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -322,6 +399,20 @@ begin
     {
         function Invoke-SboGetPnPFileAsListItem
         {
+            <#
+            .SYNOPSIS
+                Resolves a file URL to a SharePoint list item object.
+
+            .PARAMETER Url
+                Server-relative URL of the file.
+
+            .PARAMETER Connection
+                Active PnP connection used to retrieve the file.
+
+            .OUTPUTS
+                Object
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -339,6 +430,20 @@ begin
     {
         function Invoke-SboGetPnPFolderAsListItem
         {
+            <#
+            .SYNOPSIS
+                Resolves a folder URL to a SharePoint list item object.
+
+            .PARAMETER Url
+                Server-relative URL of the folder.
+
+            .PARAMETER Connection
+                Active PnP connection used to retrieve the folder.
+
+            .OUTPUTS
+                Object
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -356,6 +461,26 @@ begin
     {
         function Invoke-SboSetPnPListItemPermission
         {
+            <#
+            .SYNOPSIS
+                Applies a role assignment to a SharePoint list item.
+
+            .PARAMETER List
+                Target list title.
+
+            .PARAMETER Identity
+                Numeric list item identifier.
+
+            .PARAMETER User
+                User principal to grant permissions to.
+
+            .PARAMETER AddRole
+                SharePoint role definition to assign.
+
+            .PARAMETER Connection
+                Active PnP connection used for the permission update.
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -382,6 +507,14 @@ begin
     {
         function Invoke-SboDisconnectPnPOnline
         {
+            <#
+            .SYNOPSIS
+                Disconnects a provided PnP connection.
+
+            .PARAMETER Connection
+                Active PnP connection to disconnect.
+            #>
+            [CmdletBinding()]
             param
             (
                 [Parameter(Mandatory = $true)]
@@ -414,6 +547,17 @@ begin
 
     function Write-LogLine
     {
+        <#
+        .SYNOPSIS
+            Writes a structured log line to verbose output and the log file.
+
+        .PARAMETER Message
+            Log message body.
+
+        .PARAMETER Level
+            Log severity level.
+        #>
+        [CmdletBinding()]
         param
         (
             [Parameter(Mandatory = $true)]
@@ -446,32 +590,32 @@ begin
         }
     }
 
-    Write-LogLine -Message "BEGIN Script: User=$RunUserName, InputFile=$($InputFile.FullName), TenantAdminUrl=$TenantAdminUrl, AllowUnknownRole=$AllowUnknownRole, TargetLibraryTitle=$TargetLibraryTitle, AutoDiscoverDefaultLibrary=$AutoDiscoverDefaultLibrary"
+    Write-LogLine -Message "BEGIN Script: User=$RunUserName, InputFile=$($InputFile.FullName), MySiteHostUrl=$MySiteHostUrl, AllowUnknownRole=$AllowUnknownRole, TargetLibraryTitle=$TargetLibraryTitle, AutoDiscoverDefaultLibrary=$AutoDiscoverDefaultLibrary"
 }
 
 process
 {
     $PersonalSiteConnection = $null
     $CurrentConnection = $null
-    $CreatedTenantConnection = $false
+    $CreatedHostConnection = $false
     $CreatedPersonalConnection = $false
     $UserStartTime = Get-Date
     Write-LogLine -Message "BEGIN User Processing: UserToProcess=$UserToProcess"
 
     try
     {
-        # Ensure there is a tenant/admin-scoped PnP connection available for profile lookup.
-        # If none exists, create one using TenantAdminUrl.
+        # Ensure there is a host-scoped PnP connection available for profile lookup.
+        # If none exists, create one using MySiteHostUrl.
         $CurrentConnection = Invoke-SboGetPnPConnection
         if (-not $CurrentConnection)
         {
-            $CurrentConnection = Invoke-SboConnectPnPOnline -Url $TenantAdminUrl -ClientId $ClientId
-            $CreatedTenantConnection = $true
-            Write-LogLine -Message "Created new tenant/admin PnP connection: $TenantAdminUrl"
+            $CurrentConnection = Invoke-SboConnectPnPOnline -Url $MySiteHostUrl -ClientId $ClientId
+            $CreatedHostConnection = $true
+            Write-LogLine -Message "Created new My Site host PnP connection: $MySiteHostUrl"
         }
         else
         {
-            Write-LogLine -Message "Reusing existing tenant/admin PnP connection."
+            Write-LogLine -Message "Reusing existing host-scoped PnP connection."
         }
 
         # Resolve the user's OneDrive URL from SharePoint profile properties.
@@ -740,10 +884,10 @@ process
             Write-Verbose "Disconnected PnP connection for $UserToProcess"
         }
 
-        if ($CreatedTenantConnection -and $CurrentConnection)
+        if ($CreatedHostConnection -and $CurrentConnection)
         {
             Invoke-SboDisconnectPnPOnline -Connection $CurrentConnection
-            Write-LogLine -Message "Disconnected tenant/admin PnP connection for user '$UserToProcess'."
+            Write-LogLine -Message "Disconnected host-scoped PnP connection for user '$UserToProcess'."
         }
 
         $UserDuration = New-TimeSpan -Start $UserStartTime -End (Get-Date)

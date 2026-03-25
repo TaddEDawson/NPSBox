@@ -68,11 +68,11 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         # Shared mock state that each test can override in Arrange as needed.
         $global:TestCsvRows = @(New-BoxRow)
         $global:TestGetConnectionQueue = @(
-            [PSCustomObject]@{ Url = 'https://contoso-admin.sharepoint.com' },
+            [PSCustomObject]@{ Url = 'https://contoso-my.sharepoint.com' },
             $null
         )
 
-        $global:TestTenantConnection = [PSCustomObject]@{ Url = 'https://contoso-admin.sharepoint.com'; Name = 'TenantConnection' }
+        $global:TestHostConnection = [PSCustomObject]@{ Url = 'https://contoso-my.sharepoint.com'; Name = 'HostConnection' }
         $global:TestPersonalConnection = [PSCustomObject]@{ Url = $script:DefaultPersonalSiteUrl; Name = 'PersonalConnection' }
 
         $global:TestResolvedLibrary = [PSCustomObject]@{
@@ -115,8 +115,8 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
                 [string] $ClientId
             )
 
-            if ($Url -like '*-admin.sharepoint.com*') {
-                return $global:TestTenantConnection
+            if ($Url -notlike '*/personal/*') {
+                return $global:TestHostConnection
             }
 
             return $global:TestPersonalConnection
@@ -279,7 +279,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         # First Get-PnPConnection call returns tenant connection and second returns personal connection.
         # This simulates full reuse and no new Connect-PnPOnline calls should occur.
         $global:TestGetConnectionQueue = @(
-            [PSCustomObject]@{ Url = 'https://contoso-admin.sharepoint.com' },
+            [PSCustomObject]@{ Url = 'https://contoso-my.sharepoint.com' },
             [PSCustomObject]@{ Url = $script:DefaultPersonalSiteUrl }
         )
 
