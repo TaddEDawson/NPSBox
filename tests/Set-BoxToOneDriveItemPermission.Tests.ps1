@@ -297,6 +297,125 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         Assert-MockCalled Invoke-SboDisconnectPnPOnline -Times 0
     }
 
+    It 'uses existing PNPConnection and processes items successfully' -Tag 'PNPConnection' {
+        # Arrange
+        # Connection queue returns existing host then existing personal connection.
+        $global:TestGetConnectionQueue = @(
+            [PSCustomObject]@{ Url = 'https://contoso-my.sharepoint.com' },
+            [PSCustomObject]@{ Url = $script:DefaultPersonalSiteUrl }
+        )
+
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 1
+        @($result)[0].PermissionChangeStatus | Should -Be 'Applied'
+        Assert-MockCalled Invoke-SboConnectPnPOnline -Times 0
+        Assert-MockCalled Invoke-SboDisconnectPnPOnline -Times 0
+        Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
+    }
+
+    It 'calls profile and identity-list wrapper functions in default library mode' {
+        # Arrange
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $null = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        Assert-MockCalled Invoke-SboGetPnPUserProfileProperty -Times 1
+        Assert-MockCalled Invoke-SboGetPnPListByIdentity -Times 1
+        Assert-MockCalled Invoke-SboGetPnPLists -Times 0
+        Assert-MockCalled Invoke-SboGetPnPProperty -Times 0
+    }
+
+    It 'calls list discovery and property-load wrappers in auto-discover mode' {
+        # Arrange
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            AutoDiscoverDefaultLibrary = $true
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $null = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        Assert-MockCalled Invoke-SboGetPnPLists -Times 1
+        Assert-MockCalled Invoke-SboGetPnPProperty -Times 1
+        Assert-MockCalled Invoke-SboGetPnPListByIdentity -Times 0
+    }
+
+    It 'uses folder wrapper for folder items and still applies permissions' {
+        # Arrange
+        $global:TestCsvRows = @(
+            New-BoxRow -CollaboratorPermission 'Editor' -ItemType 'Folder' -Path 'Documents/FolderA' -ItemName 'FolderA'
+        )
+
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 1
+        Assert-MockCalled Invoke-SboGetPnPFolderAsListItem -Times 1
+        Assert-MockCalled Invoke-SboGetPnPFileAsListItem -Times 0
+        Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
+    }
+
+    It 'creates and disconnects both host and personal connections when none exist' {
+        # Arrange
+        # First connection check returns null (host connection required),
+        # second check for personal connection also returns null.
+        $global:TestGetConnectionQueue = @($null, $null)
+
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $null = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        Assert-MockCalled Invoke-SboConnectPnPOnline -Times 2
+        Assert-MockCalled Invoke-SboDisconnectPnPOnline -Times 2
+    }
+
+    It 'writes log lines through the logging helper during normal execution' {
+        # Arrange
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $null = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        Assert-MockCalled Add-Content
+        Assert-MockCalled Write-Verbose
+    }
+
     It 'uses auto-discovered document library when AutoDiscoverDefaultLibrary is provided' {
         # Arrange
         $global:TestResolvedLibrary = [PSCustomObject]@{
