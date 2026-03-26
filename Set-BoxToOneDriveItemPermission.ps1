@@ -405,7 +405,11 @@ begin
 
             Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPUserProfileProperty' -Parameters @{ Account = $Account; Connection = $Connection }
 
-            Get-PnPUserProfileProperty -Account $Account -Connection $Connection
+            $PnpUserProfileProperty = Get-PnPUserProfileProperty -Account $Account -Connection $Connection -Verbose
+            
+            Write-Verbose "Retrieved user profile properties for '$Account'. Available properties: $($PnpUserProfileProperty.PSObject.Properties.Name -join ', ')" -Verbose
+            Write-Verbose "Raw user profile property output: $($PnpUserProfileProperty | Out-String)" -Verbose  
+            return $PnpUserProfileProperty  
         }
     }
 
