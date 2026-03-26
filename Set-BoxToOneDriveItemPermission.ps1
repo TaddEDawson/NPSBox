@@ -233,6 +233,96 @@ param
 ) # param
 begin
 {
+    function ConvertTo-SboVerboseValue
+    {
+        <#
+        .SYNOPSIS
+            Converts a parameter value into a readable string for verbose tracing.
+
+        .PARAMETER Value
+            The value to convert.
+
+        .OUTPUTS
+            String
+        #>
+        [CmdletBinding()]
+        param
+        (
+            [Parameter()]
+            [AllowNull()]
+            [object] $Value
+        )
+
+        if ($null -eq $Value)
+        {
+            return '<null>'
+        }
+
+        if ($Value -is [string])
+        {
+            if ([string]::IsNullOrWhiteSpace($Value))
+            {
+                return '<empty>'
+            }
+
+            return $Value
+        }
+
+        if ($Value -is [System.IO.FileInfo])
+        {
+            return $Value.FullName
+        }
+
+        if ($Value -is [bool] -or $Value -is [switch])
+        {
+            return [string] $Value
+        }
+
+        if ($Value.PSObject -and $Value.PSObject.Properties['Url'])
+        {
+            return [string] $Value.Url
+        }
+
+        return [string] $Value
+    }
+
+    function Write-SboFunctionVerbose
+    {
+        <#
+        .SYNOPSIS
+            Writes a standard verbose message with function parameter values.
+
+        .PARAMETER FunctionName
+            Name of the function emitting verbose output.
+
+        .PARAMETER Parameters
+            Hashtable of parameter names and values passed to the function.
+        #>
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $FunctionName
+            ,
+            [Parameter(Mandatory = $true)]
+            [hashtable] $Parameters
+        )
+
+        if ($Parameters.Count -eq 0)
+        {
+            Write-Verbose "$FunctionName parameters: (none)"
+            return
+        }
+
+        $parameterText = $Parameters.GetEnumerator() |
+                            Sort-Object -Property Key |
+                            ForEach-Object {
+                                "{0}='{1}'" -f $_.Key, (ConvertTo-SboVerboseValue -Value $_.Value)
+                            }
+
+        Write-Verbose ("{0} parameters: {1}" -f $FunctionName, ($parameterText -join ', '))
+    }
+
     if (-not (Get-Command -Name Invoke-SboGetPnPConnection -ErrorAction SilentlyContinue))
     {
         function Invoke-SboGetPnPConnection
@@ -246,6 +336,8 @@ begin
             #>
             [CmdletBinding()]
             param()
+
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPConnection' -Parameters @{}
 
             Get-PnPConnection -ErrorAction SilentlyContinue
         }
@@ -278,6 +370,8 @@ begin
                 [string] $ClientId
             )
 
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboConnectPnPOnline' -Parameters @{ Url = $Url; ClientId = $ClientId }
+
             Connect-PnPOnline -Url $Url -ClientId $ClientId -Interactive -ReturnConnection
         }
     }
@@ -309,6 +403,8 @@ begin
                 [object] $Connection
             )
 
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPUserProfileProperty' -Parameters @{ Account = $Account; Connection = $Connection }
+
             Get-PnPUserProfileProperty -Account $Account -Connection $Connection
         }
     }
@@ -339,6 +435,8 @@ begin
                 [Parameter(Mandatory = $true)]
                 [object] $Profile
             )
+
+            Write-SboFunctionVerbose -FunctionName 'Resolve-SboPersonalSiteUrl' -Parameters @{ Profile = $Profile }
 
             $primaryKeys = @('PersonalSiteUrl', 'PersonalUrl')
 
@@ -439,6 +537,8 @@ begin
                 [object] $Connection
             )
 
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPLists' -Parameters @{ Connection = $Connection }
+
             Get-PnPList -Connection $Connection
         }
     }
@@ -469,6 +569,8 @@ begin
                 [Parameter(Mandatory = $true)]
                 [object] $Connection
             )
+
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPListByIdentity' -Parameters @{ Identity = $Identity; Connection = $Connection }
 
             Get-PnPList -Identity $Identity -Includes RootFolder -Connection $Connection -ErrorAction Stop
         }
@@ -504,6 +606,8 @@ begin
                 [object] $Connection
             )
 
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPProperty' -Parameters @{ ClientObject = $ClientObject; Property = $Property; Connection = $Connection }
+
             Get-PnPProperty -ClientObject $ClientObject -Property $Property -Connection $Connection | Out-Null
         }
     }
@@ -535,6 +639,8 @@ begin
                 [object] $Connection
             )
 
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPFileAsListItem' -Parameters @{ Url = $Url; Connection = $Connection }
+
             Get-PnPFile -Url $Url -AsListItem -Connection $Connection
         }
     }
@@ -565,6 +671,8 @@ begin
                 [Parameter(Mandatory = $true)]
                 [object] $Connection
             )
+
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPFolderAsListItem' -Parameters @{ Url = $Url; Connection = $Connection }
 
             Get-PnPFolder -Url $Url -AsListItem -Connection $Connection
         }
@@ -612,6 +720,8 @@ begin
                 [object] $Connection
             )
 
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboSetPnPListItemPermission' -Parameters @{ List = $List; Identity = $Identity; User = $User; AddRole = $AddRole; Connection = $Connection }
+
             Set-PnPListItemPermission -List $List -Identity $Identity -User $User -AddRole $AddRole -Connection $Connection -ErrorAction Stop | Out-Null
         }
     }
@@ -633,6 +743,8 @@ begin
                 [Parameter(Mandatory = $true)]
                 [object] $Connection
             )
+
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboDisconnectPnPOnline' -Parameters @{ Connection = $Connection }
 
             Disconnect-PnPOnline -Connection $Connection -ErrorAction SilentlyContinue
         }
@@ -680,6 +792,8 @@ begin
             [ValidateSet('INFO', 'WARN', 'ERROR')]
             [string] $Level = 'INFO'
         )
+
+        Write-SboFunctionVerbose -FunctionName 'Write-LogLine' -Parameters @{ Message = $Message; Level = $Level }
 
         $callerFrame = Get-PSCallStack | Select-Object -Skip 1 -First 1
         $callerLine = if ($callerFrame -and $callerFrame.ScriptLineNumber -gt 0) { $callerFrame.ScriptLineNumber } else { 0 }
