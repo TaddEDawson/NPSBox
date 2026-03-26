@@ -1,4 +1,3 @@
-#Requires -Module PNP.PowerShell
 <#
     .SYNOPSIS
         Processes Box collaboration data for a given user and resolves each item to its

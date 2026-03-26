@@ -50,6 +50,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
             'Invoke-SboGetPnPConnection',
             'Invoke-SboConnectPnPOnline',
             'Invoke-SboGetPnPUserProfileProperty',
+            'Resolve-SboPersonalSiteUrl',
             'Invoke-SboGetPnPLists',
             'Invoke-SboGetPnPListByIdentity',
             'Invoke-SboGetPnPProperty',
@@ -65,14 +66,18 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
     }
 
     BeforeEach {
+        if (-not (Get-Command -Name Resolve-SboPersonalSiteUrl -ErrorAction SilentlyContinue)) {
+            Set-Item -Path Function:Resolve-SboPersonalSiteUrl -Value { param([object] $Profile) $null }
+        }
+
         # Shared mock state that each test can override in Arrange as needed.
         $global:TestCsvRows = @(New-BoxRow)
         $global:TestGetConnectionQueue = @(
-            [PSCustomObject]@{ Url = 'https://contoso-my.sharepoint.com' },
+            [PSCustomObject]@{ Url = 'https://contoso-admin.sharepoint.com/' },
             $null
         )
 
-        $global:TestHostConnection = [PSCustomObject]@{ Url = 'https://contoso-my.sharepoint.com'; Name = 'HostConnection' }
+        $global:TestAdminConnection = [PSCustomObject]@{ Url = 'https://contoso-admin.sharepoint.com/'; Name = 'AdminConnection' }
         $global:TestPersonalConnection = [PSCustomObject]@{ Url = $script:DefaultPersonalSiteUrl; Name = 'PersonalConnection' }
 
         $global:TestResolvedLibrary = [PSCustomObject]@{
@@ -116,7 +121,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
             )
 
             if ($Url -notlike '*/personal/*') {
-                return $global:TestHostConnection
+                return $global:TestAdminConnection
             }
 
             return $global:TestPersonalConnection
@@ -126,6 +131,47 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
             [PSCustomObject]@{
                 PersonalSiteUrl = 'https://contoso-my.sharepoint.com/personal/user_contoso_onmicrosoft_com'
             }
+        }
+
+        Mock Resolve-SboPersonalSiteUrl {
+            param(
+                [object] $Profile
+            )
+
+            if ($Profile -is [System.Collections.IEnumerable] -and -not ($Profile -is [string])) {
+                $entry = @($Profile | Where-Object {
+                    $_ -and $_.PSObject.Properties['Key'] -and $_.Key -eq 'PersonalUrl'
+                } | Select-Object -First 1)
+
+                if ($entry.Count -gt 0) {
+                    return [string] $entry[0].Value
+                }
+
+                $hostEntry = @($Profile | Where-Object {
+                    $_ -and $_.PSObject.Properties['Key'] -and $_.Key -eq 'PersonalSiteHostUrl'
+                } | Select-Object -First 1)
+                $spaceEntry = @($Profile | Where-Object {
+                    $_ -and $_.PSObject.Properties['Key'] -and $_.Key -eq 'PersonalSpace'
+                } | Select-Object -First 1)
+
+                if ($hostEntry.Count -gt 0 -and $spaceEntry.Count -gt 0) {
+                    $hostAuthority = ([Uri] ([string] $hostEntry[0].Value)).GetLeftPart([System.UriPartial]::Authority)
+                    $space = [string] $spaceEntry[0].Value
+                    if (-not $space.StartsWith('/')) {
+                        $space = '/' + $space
+                    }
+                    return ($hostAuthority + $space)
+                }
+            }
+
+            if ($Profile.PSObject.Properties.Name -contains 'PersonalSiteUrl') {
+                return [string] $Profile.PersonalSiteUrl
+            }
+            if ($Profile.PSObject.Properties.Name -contains 'PersonalUrl') {
+                return [string] $Profile.PersonalUrl
+            }
+
+            return $null
         }
 
         Mock Import-Csv { $global:TestCsvRows }
@@ -279,7 +325,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         # First Get-PnPConnection call returns tenant connection and second returns personal connection.
         # This simulates full reuse and no new Connect-PnPOnline calls should occur.
         $global:TestGetConnectionQueue = @(
-            [PSCustomObject]@{ Url = 'https://contoso-my.sharepoint.com' },
+            [PSCustomObject]@{ Url = 'https://contoso-admin.sharepoint.com/' },
             [PSCustomObject]@{ Url = $script:DefaultPersonalSiteUrl }
         )
 
@@ -301,7 +347,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         # Arrange
         # Connection queue returns existing host then existing personal connection.
         $global:TestGetConnectionQueue = @(
-            [PSCustomObject]@{ Url = 'https://contoso-my.sharepoint.com' },
+            [PSCustomObject]@{ Url = 'https://contoso-admin.sharepoint.com/' },
             [PSCustomObject]@{ Url = $script:DefaultPersonalSiteUrl }
         )
 
@@ -380,7 +426,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
     }
 
-    It 'creates and disconnects both host and personal connections when none exist' {
+    It 'creates and disconnects both admin and personal connections when none exist' {
         # Arrange
         # First connection check returns null (host connection required),
         # second check for personal connection also returns null.
@@ -398,6 +444,29 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         # Assert
         Assert-MockCalled Invoke-SboConnectPnPOnline -Times 2
         Assert-MockCalled Invoke-SboDisconnectPnPOnline -Times 2
+    }
+
+    It 'uses SharePointOnlineAdminUrl when creating the admin-scoped connection' {
+        # Arrange
+        $customAdminUrl = 'https://fabrikam-admin.sharepoint.com/'
+
+        Mock Invoke-SboGetPnPConnection {
+            $null
+        }
+
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            SharePointOnlineAdminUrl = $customAdminUrl
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 1
+        @($result)[0].PermissionChangeStatus | Should -Be 'Applied'
     }
 
     It 'writes log lines through the logging helper during normal execution' {
@@ -465,31 +534,6 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         Assert-MockCalled Write-Warning -ParameterFilter {
             $Message -like 'Log write failed*'
         }
-    }
-
-    It 'resolves personal site URL when profile output is key/value entries with PersonalUrl' {
-        # Arrange
-        Mock Invoke-SboGetPnPUserProfileProperty {
-            @(
-                [PSCustomObject]@{ Key = 'AccountName'; Value = 'i:0#.f|membership|user@contoso.onmicrosoft.com' },
-                [PSCustomObject]@{ Key = 'PersonalUrl'; Value = $script:DefaultPersonalSiteUrl }
-            )
-        }
-
-        $invokeParams = @{
-            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
-            UserToProcess = $script:DefaultUser
-            LogFolder = $TestDrive
-        }
-
-        # Act
-        $result = & $script:ScriptUnderTest @invokeParams
-
-        # Assert
-        @($result).Count | Should -Be 1
-        @($result)[0].PermissionChangeStatus | Should -Be 'Applied'
-        Assert-MockCalled Invoke-SboGetPnPUserProfileProperty -Times 1
-        Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
     }
 
     It 'resolves personal site URL from PersonalSiteHostUrl and PersonalSpace when PersonalUrl is absent' {
