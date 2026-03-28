@@ -1,0 +1,19 @@
+2026-03-28T00:00:34.437-04:00 [INFO] [L902] BEGIN Script: User=tadd, InputFile=C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv, MySiteHostUrl=https://m365cpi19595461-my.sharepoint.com, SharePointOnlineAdminUrl=https://m365cpi19595461-admin.sharepoint.com/, AllowUnknownRole=False, TargetLibraryTitle=Documents, AutoDiscoverDefaultLibrary=False
+2026-03-28T00:00:34.440-04:00 [INFO] [L912] BEGIN User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com
+2026-03-28T00:00:34.471-04:00 [INFO] [L927] Reusing existing admin-scoped PnP connection.
+2026-03-28T00:00:35.440-04:00 [INFO] [L942] Profile properties for 'AdilE@M365CPI19595461.OnMicrosoft.com': PersonalSiteHostUrl='https://m365cpi19595461-my.sharepoint.com:443/', PersonalSpace='/personal/adile_m365cpi19595461_onmicrosoft_com/', PersonalUrl='https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/'
+2026-03-28T00:00:35.474-04:00 [INFO] [L950] Resolved personal site URL for AdilE@M365CPI19595461.OnMicrosoft.com: https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/
+2026-03-28T00:00:35.522-04:00 [INFO] [L977] Processing 4 items for user AdilE@M365CPI19595461.OnMicrosoft.com
+2026-03-28T00:00:41.110-04:00 [INFO] [L996] Created new personal-site PnP connection: https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/
+2026-03-28T00:00:42.181-04:00 [INFO] [L1027] Using target library 'Documents' with root path '/personal/adile_m365cpi19595461_onmicrosoft_com/Documents'.
+2026-03-28T00:00:42.252-04:00 [INFO] [L1114] Processing item 'SampleFile.docx' (File) for collaborator 'AmberR@M365CPI19595461.onmicrosoft.com' with mapped role 'Contributor'.
+2026-03-28T00:00:45.203-04:00 [INFO] [L1200] Applied role 'Contribute' for 'AmberR@M365CPI19595461.onmicrosoft.com' on 'SampleFile.docx'.
+2026-03-28T00:00:45.242-04:00 [INFO] [L1114] Processing item 'Thesis (Mapping IPv6 Mobile Providers)' (Folder) for collaborator 'AmberR@M365CPI19595461.onmicrosoft.com' with mapped role 'Contributor'.
+2026-03-28T00:00:47.881-04:00 [INFO] [L1200] Applied role 'Contribute' for 'AmberR@M365CPI19595461.onmicrosoft.com' on 'Thesis (Mapping IPv6 Mobile Providers)'.
+2026-03-28T00:00:47.920-04:00 [INFO] [L1114] Processing item 'Thesis (Mapping IPv6 Mobile Providers)' (Folder) for collaborator 'BillieV@M365CPI19595461.onmicrosoft.com' with mapped role 'Viewer'.
+2026-03-28T00:00:51.051-04:00 [INFO] [L1200] Applied role 'Read' for 'BillieV@M365CPI19595461.onmicrosoft.com' on 'Thesis (Mapping IPv6 Mobile Providers)'.
+2026-03-28T00:00:51.087-04:00 [INFO] [L1114] Processing item 'Thesis (Mapping IPv6 Mobile Providers)' (Folder) for collaborator 'CoraT@M365CPI19595461.onmicrosoft.com' with mapped role 'Contributor'.
+2026-03-28T00:00:54.112-04:00 [INFO] [L1200] Applied role 'Contribute' for 'CoraT@M365CPI19595461.onmicrosoft.com' on 'Thesis (Mapping IPv6 Mobile Providers)'.
+2026-03-28T00:00:54.153-04:00 [INFO] [L1242] Disconnected personal-site PnP connection for user 'AdilE@M365CPI19595461.OnMicrosoft.com'.
+2026-03-28T00:00:54.185-04:00 [INFO] [L1253] END User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com; Duration=00:00:19.744
+2026-03-28T00:00:54.213-04:00 [INFO] [L1261] END Script: Duration=00:00:19.776; LogFile=C:\Repos\NPSBox\Logs\Set-BoxToOneDriveItemPermission_tadd_20260328_000034_435.log
