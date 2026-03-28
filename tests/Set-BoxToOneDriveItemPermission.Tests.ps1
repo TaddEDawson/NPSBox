@@ -67,7 +67,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
 
     BeforeEach {
         if (-not (Get-Command -Name Resolve-SboPersonalSiteUrl -ErrorAction SilentlyContinue)) {
-            Set-Item -Path Function:Resolve-SboPersonalSiteUrl -Value { param([object] $Profile) $null }
+            Set-Item -Path Function:Resolve-SboPersonalSiteUrl -Value { param([Alias('Profile')][object] $InputObject) $null }
         }
 
         # Shared mock state that each test can override in Arrange as needed.
@@ -91,12 +91,20 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
 
         $global:CapturedGetFileUrls = @()
         $global:CapturedPermissionCalls = @()
+        $global:CapturedLogLines = @()
 
         Mock Test-Path { $true }
         Mock New-Item {}
         Mock Write-Verbose {}
         Mock Write-Warning {}
-        Mock Add-Content {}
+        Mock Add-Content {
+            param(
+                [string] $LiteralPath,
+                [string] $Value
+            )
+
+            $global:CapturedLogLines += $Value
+        }
 
         Mock Invoke-SboGetPnPConnection {
             if ($global:TestGetConnectionQueue.Count -eq 0) {
@@ -135,11 +143,12 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
 
         Mock Resolve-SboPersonalSiteUrl {
             param(
-                [object] $Profile
+                [Alias('Profile')]
+                [object] $InputObject
             )
 
-            if ($Profile -is [System.Collections.IEnumerable] -and -not ($Profile -is [string])) {
-                $entry = @($Profile | Where-Object {
+            if ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string])) {
+                $entry = @($InputObject | Where-Object {
                     $_ -and $_.PSObject.Properties['Key'] -and $_.Key -eq 'PersonalUrl'
                 } | Select-Object -First 1)
 
@@ -147,10 +156,10 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
                     return [string] $entry[0].Value
                 }
 
-                $hostEntry = @($Profile | Where-Object {
+                $hostEntry = @($InputObject | Where-Object {
                     $_ -and $_.PSObject.Properties['Key'] -and $_.Key -eq 'PersonalSiteHostUrl'
                 } | Select-Object -First 1)
-                $spaceEntry = @($Profile | Where-Object {
+                $spaceEntry = @($InputObject | Where-Object {
                     $_ -and $_.PSObject.Properties['Key'] -and $_.Key -eq 'PersonalSpace'
                 } | Select-Object -First 1)
 
@@ -164,11 +173,11 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
                 }
             }
 
-            if ($Profile.PSObject.Properties.Name -contains 'PersonalSiteUrl') {
-                return [string] $Profile.PersonalSiteUrl
+            if ($InputObject.PSObject.Properties.Name -contains 'PersonalSiteUrl') {
+                return [string] $InputObject.PersonalSiteUrl
             }
-            if ($Profile.PSObject.Properties.Name -contains 'PersonalUrl') {
-                return [string] $Profile.PersonalUrl
+            if ($InputObject.PSObject.Properties.Name -contains 'PersonalUrl') {
+                return [string] $InputObject.PersonalUrl
             }
 
             return $null
@@ -220,9 +229,6 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
             }
         }
         Mock Invoke-SboDisconnectPnPOnline {}
-
-        # Keep these mocks for non-wrapper helpers.
-        Mock Import-Csv { $global:TestCsvRows }
     }
 
     It 'fails unknown collaborator role values by default' {
@@ -381,9 +387,26 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
 
         # Assert
         Assert-MockCalled Invoke-SboGetPnPUserProfileProperty -Times 1
+        Assert-MockCalled Resolve-SboPersonalSiteUrl -Times 1
         Assert-MockCalled Invoke-SboGetPnPListByIdentity -Times 1
         Assert-MockCalled Invoke-SboGetPnPLists -Times 0
         Assert-MockCalled Invoke-SboGetPnPProperty -Times 0
+    }
+
+    It 'logs extracted profile properties before resolving personal site URL' {
+        # Arrange
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 1
+        ($global:CapturedLogLines -join "`n") | Should -Match "Profile properties for '$($script:DefaultUser)': PersonalSiteHostUrl='<null>', PersonalSpace='<null>', PersonalUrl='<null>'"
     }
 
     It 'calls list discovery and property-load wrappers in auto-discover mode' {
@@ -557,6 +580,40 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         # Assert
         @($result).Count | Should -Be 1
         @($result)[0].ItemUrl.AbsoluteUri | Should -Match '^https://contoso-my\.sharepoint\.com/personal/'
+        ($global:CapturedLogLines -join "`n") | Should -Match "Profile properties for '$($script:DefaultUser)': PersonalSiteHostUrl='https://contoso-my\.sharepoint\.com:443/', PersonalSpace='/personal/user_contoso_onmicrosoft_com/', PersonalUrl='<null>'"
+        Assert-MockCalled Resolve-SboPersonalSiteUrl -Times 1
         Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
+    }
+
+    It 'writes an error when personal site URL cannot be resolved from profile properties' {
+        # Arrange
+        Mock Invoke-SboGetPnPUserProfileProperty {
+            [PSCustomObject]@{}
+        }
+        Mock Resolve-SboPersonalSiteUrl {
+            param(
+                [Alias('Profile')]
+                [object] $InputObject
+            )
+
+            return $null
+        }
+
+        $errors = @()
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+            ErrorAction = 'SilentlyContinue'
+            ErrorVariable = 'errors'
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 0
+        $errors | Should -Not -BeNullOrEmpty
+        ($errors[0].ToString()) | Should -Match 'does not have a PersonalSiteUrl'
     }
 }

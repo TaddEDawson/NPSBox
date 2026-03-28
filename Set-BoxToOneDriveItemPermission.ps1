@@ -286,6 +286,91 @@ begin
         return [string] $Value
     }
 
+    function Get-SboUserProfilePropertyValue
+    {
+        <#
+        .SYNOPSIS
+            Extracts a single user profile property value from common PnP output shapes.
+
+        .PARAMETER Profile
+            Profile object returned by Get-PnPUserProfileProperty.
+
+        .PARAMETER PropertyName
+            Name of the property to retrieve.
+
+        .OUTPUTS
+            String
+        #>
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [AllowNull()]
+            [object] $Profile
+            ,
+            [Parameter(Mandatory = $true)]
+            [string] $PropertyName
+        )
+
+        Write-SboFunctionVerbose -FunctionName 'Get-SboUserProfilePropertyValue' -Parameters @{ PropertyName = $PropertyName; Profile = $Profile }
+
+        if ($null -eq $Profile)
+        {
+            return $null
+        }
+
+        if ($Profile.PSObject -and $Profile.PSObject.Properties.Name -contains $PropertyName)
+        {
+            $directValue = [string] $Profile.$PropertyName
+            if (-not [string]::IsNullOrWhiteSpace($directValue))
+            {
+                return $directValue
+            }
+        }
+
+        if ($Profile.PSObject -and $Profile.PSObject.Properties.Name -contains 'UserProfileProperties' -and $null -ne $Profile.UserProfileProperties)
+        {
+            $nestedValue = Get-SboUserProfilePropertyValue -Profile $Profile.UserProfileProperties -PropertyName $PropertyName
+            if (-not [string]::IsNullOrWhiteSpace($nestedValue))
+            {
+                return $nestedValue
+            }
+        }
+
+        if ($Profile -is [System.Collections.IDictionary])
+        {
+            if ($Profile.Contains($PropertyName))
+            {
+                $dictionaryValue = [string] $Profile[$PropertyName]
+                if (-not [string]::IsNullOrWhiteSpace($dictionaryValue))
+                {
+                    return $dictionaryValue
+                }
+            }
+        }
+
+        $kvEntries = @($Profile | Where-Object {
+            $_ -and
+            $_.PSObject.Properties['Key'] -and
+            $_.PSObject.Properties['Value']
+        })
+
+        if ($kvEntries.Count -gt 0)
+        {
+            $entry = $kvEntries | Where-Object { $_.Key -eq $PropertyName } | Select-Object -First 1
+            if ($entry)
+            {
+                $entryValue = [string] $entry.Value
+                if (-not [string]::IsNullOrWhiteSpace($entryValue))
+                {
+                    return $entryValue
+                }
+            }
+        }
+
+        return $null
+    }
+
     function Write-SboFunctionVerbose
     {
         <#
@@ -405,11 +490,16 @@ begin
 
             Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPUserProfileProperty' -Parameters @{ Account = $Account; Connection = $Connection }
 
-            $PnpUserProfileProperty = Get-PnPUserProfileProperty -Account $Account -Connection $Connection -Verbose
-            
-            Write-Verbose "Retrieved user profile properties for '$Account'. Available properties: $($PnpUserProfileProperty.PSObject.Properties.Name -join ', ')" -Verbose
-            Write-Verbose "Raw user profile property output: $($PnpUserProfileProperty | Out-String)" -Verbose  
-            return $PnpUserProfileProperty  
+            $requestedProperties = @('PersonalSiteHostUrl', 'PersonalSpace', 'PersonalUrl', 'PersonalSiteUrl')
+            $PnpUserProfileProperty = Get-PnPUserProfileProperty -Account $Account -Properties $requestedProperties -Connection $Connection -ErrorAction Stop
+
+            $profilePropertySummary = $requestedProperties | ForEach-Object {
+                $resolvedValue = Get-SboUserProfilePropertyValue -Profile $PnpUserProfileProperty -PropertyName $_
+                "{0}='{1}'" -f $_, (ConvertTo-SboVerboseValue -Value $resolvedValue)
+            }
+
+            Write-Verbose ("Retrieved user profile properties for '{0}': {1}" -f $Account, ($profilePropertySummary -join ', '))
+            return $PnpUserProfileProperty
         }
     }
 
@@ -446,74 +536,20 @@ begin
 
             foreach ($key in $primaryKeys)
             {
-                if ($Profile.PSObject.Properties.Name -contains $key)
+                $candidateValue = Get-SboUserProfilePropertyValue -Profile $Profile -PropertyName $key
+                if (-not [string]::IsNullOrWhiteSpace($candidateValue))
                 {
-                    $candidateValue = [string] $Profile.$key
-                    if (-not [string]::IsNullOrWhiteSpace($candidateValue))
-                    {
-                        return $candidateValue
-                    }
+                    return $candidateValue
                 }
             }
 
-            if ($Profile -is [System.Collections.IDictionary])
+            $hostUrl = Get-SboUserProfilePropertyValue -Profile $Profile -PropertyName 'PersonalSiteHostUrl'
+            $personalSpace = Get-SboUserProfilePropertyValue -Profile $Profile -PropertyName 'PersonalSpace'
+            if (-not [string]::IsNullOrWhiteSpace($hostUrl) -and -not [string]::IsNullOrWhiteSpace($personalSpace))
             {
-                foreach ($key in $primaryKeys)
-                {
-                    if ($Profile.Contains($key))
-                    {
-                        $candidateValue = [string] $Profile[$key]
-                        if (-not [string]::IsNullOrWhiteSpace($candidateValue))
-                        {
-                            return $candidateValue
-                        }
-                    }
-                }
-
-                $hostUrl = if ($Profile.Contains('PersonalSiteHostUrl')) { [string] $Profile['PersonalSiteHostUrl'] } else { $null }
-                $personalSpace = if ($Profile.Contains('PersonalSpace')) { [string] $Profile['PersonalSpace'] } else { $null }
-                if (-not [string]::IsNullOrWhiteSpace($hostUrl) -and -not [string]::IsNullOrWhiteSpace($personalSpace))
-                {
-                    $hostAuthority = ([Uri] $hostUrl).GetLeftPart([System.UriPartial]::Authority)
-                    $normalizedPersonalSpace = if ($personalSpace.StartsWith('/')) { $personalSpace } else { '/' + $personalSpace }
-                    return ($hostAuthority + $normalizedPersonalSpace)
-                }
-            }
-
-            $kvEntries = @($Profile | Where-Object {
-                $_ -and
-                $_.PSObject.Properties['Key'] -and
-                $_.PSObject.Properties['Value']
-            })
-
-            if ($kvEntries.Count -gt 0)
-            {
-                foreach ($key in $primaryKeys)
-                {
-                    $entry = $kvEntries | Where-Object { $_.Key -eq $key } | Select-Object -First 1
-                    if ($entry)
-                    {
-                        $candidateValue = [string] $entry.Value
-                        if (-not [string]::IsNullOrWhiteSpace($candidateValue))
-                        {
-                            return $candidateValue
-                        }
-                    }
-                }
-
-                $hostEntry = $kvEntries | Where-Object { $_.Key -eq 'PersonalSiteHostUrl' } | Select-Object -First 1
-                $spaceEntry = $kvEntries | Where-Object { $_.Key -eq 'PersonalSpace' } | Select-Object -First 1
-                if ($hostEntry -and $spaceEntry)
-                {
-                    $hostUrl = [string] $hostEntry.Value
-                    $personalSpace = [string] $spaceEntry.Value
-                    if (-not [string]::IsNullOrWhiteSpace($hostUrl) -and -not [string]::IsNullOrWhiteSpace($personalSpace))
-                    {
-                        $hostAuthority = ([Uri] $hostUrl).GetLeftPart([System.UriPartial]::Authority)
-                        $normalizedPersonalSpace = if ($personalSpace.StartsWith('/')) { $personalSpace } else { '/' + $personalSpace }
-                        return ($hostAuthority + $normalizedPersonalSpace)
-                    }
-                }
+                $hostAuthority = ([Uri] $hostUrl).GetLeftPart([System.UriPartial]::Authority)
+                $normalizedPersonalSpace = if ($personalSpace.StartsWith('/')) { $personalSpace } else { '/' + $personalSpace }
+                return ($hostAuthority + $normalizedPersonalSpace)
             }
 
             return $null
@@ -860,48 +896,12 @@ process
             throw "No SharePoint user profile was returned for account '$UserToProcess'."
         }
 
-        $PersonalSiteUrl = $null
-        if ($PnPUserProfileProperties.PSObject.Properties.Name -contains 'PersonalSiteUrl')
-        {
-            $PersonalSiteUrl = [string] $PnPUserProfileProperties.PersonalSiteUrl
-        }
+        $profilePersonalSiteHostUrl = Get-SboUserProfilePropertyValue -Profile $PnPUserProfileProperties -PropertyName 'PersonalSiteHostUrl'
+        $profilePersonalSpace = Get-SboUserProfilePropertyValue -Profile $PnPUserProfileProperties -PropertyName 'PersonalSpace'
+        $profilePersonalUrl = Get-SboUserProfilePropertyValue -Profile $PnPUserProfileProperties -PropertyName 'PersonalUrl'
+        Write-LogLine -Message ("Profile properties for '{0}': PersonalSiteHostUrl='{1}', PersonalSpace='{2}', PersonalUrl='{3}'" -f $UserToProcess, (ConvertTo-SboVerboseValue -Value $profilePersonalSiteHostUrl), (ConvertTo-SboVerboseValue -Value $profilePersonalSpace), (ConvertTo-SboVerboseValue -Value $profilePersonalUrl))
 
-        if ([string]::IsNullOrWhiteSpace($PersonalSiteUrl) -and $PnPUserProfileProperties.PSObject.Properties.Name -contains 'PersonalUrl')
-        {
-            $PersonalSiteUrl = [string] $PnPUserProfileProperties.PersonalUrl
-        }
-
-        if ([string]::IsNullOrWhiteSpace($PersonalSiteUrl))
-        {
-            $kvEntries = @($PnPUserProfileProperties | Where-Object {
-                $_ -and
-                $_.PSObject.Properties['Key'] -and
-                $_.PSObject.Properties['Value']
-            })
-
-            $personalUrlEntry = $kvEntries | Where-Object { $_.Key -eq 'PersonalUrl' } | Select-Object -First 1
-            if ($personalUrlEntry)
-            {
-                $PersonalSiteUrl = [string] $personalUrlEntry.Value
-            }
-
-            if ([string]::IsNullOrWhiteSpace($PersonalSiteUrl))
-            {
-                $hostEntry = $kvEntries | Where-Object { $_.Key -eq 'PersonalSiteHostUrl' } | Select-Object -First 1
-                $spaceEntry = $kvEntries | Where-Object { $_.Key -eq 'PersonalSpace' } | Select-Object -First 1
-                if ($hostEntry -and $spaceEntry)
-                {
-                    $hostUrl = [string] $hostEntry.Value
-                    $personalSpace = [string] $spaceEntry.Value
-                    if (-not [string]::IsNullOrWhiteSpace($hostUrl) -and -not [string]::IsNullOrWhiteSpace($personalSpace))
-                    {
-                        $hostAuthority = ([Uri] $hostUrl).GetLeftPart([System.UriPartial]::Authority)
-                        $normalizedPersonalSpace = if ($personalSpace.StartsWith('/')) { $personalSpace } else { '/' + $personalSpace }
-                        $PersonalSiteUrl = $hostAuthority + $normalizedPersonalSpace
-                    }
-                }
-            }
-        }
+        $PersonalSiteUrl = Resolve-SboPersonalSiteUrl -Profile $PnPUserProfileProperties
         if ([string]::IsNullOrWhiteSpace($PersonalSiteUrl))
         {
             Write-LogLine -Level ERROR -Message "PersonalSiteUrl is empty for account '$UserToProcess'."
