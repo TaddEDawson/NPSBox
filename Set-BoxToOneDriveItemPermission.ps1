@@ -229,7 +229,7 @@ param
     [switch] $AutoDiscoverDefaultLibrary
     ,
     [Parameter()]
-    [string] $LogFolder = "C:\Temp"
+    [string] $LogFolder = "C:\Repos\NPSBox\Logs"
 ) # param
 begin
 {
