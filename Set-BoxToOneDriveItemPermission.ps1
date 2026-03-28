@@ -715,7 +715,46 @@ begin
 
             Write-SboFunctionVerbose -FunctionName 'Invoke-SboGetPnPFolderAsListItem' -Parameters @{ Url = $Url; Connection = $Connection }
 
-            Get-PnPFolder -Url $Url -AsListItem -Connection $Connection
+            try
+            {
+                return (Get-PnPFolder -Url $Url -AsListItem -Connection $Connection -ErrorAction Stop)
+            }
+            catch
+            {
+                # Some tenants resolve folders only when using a site-relative URL.
+                $retryUrl = $null
+                if (-not [string]::IsNullOrWhiteSpace($Url))
+                {
+                    if ($Url.StartsWith('/'))
+                    {
+                        $webServerRelativePath = $null
+                        if ($Connection -and $Connection.PSObject -and $Connection.PSObject.Properties['Url'])
+                        {
+                            $webServerRelativePath = ([Uri] ([string] $Connection.Url)).AbsolutePath.TrimEnd('/')
+                        }
+
+                        if (-not [string]::IsNullOrWhiteSpace($webServerRelativePath) -and
+                            -not $webServerRelativePath.Equals('/', [System.StringComparison]::OrdinalIgnoreCase) -and
+                            $Url.StartsWith($webServerRelativePath, [System.StringComparison]::OrdinalIgnoreCase))
+                        {
+                            $retryUrl = $Url.Substring($webServerRelativePath.Length).TrimStart('/')
+                        }
+                        else
+                        {
+                            $retryUrl = $Url.TrimStart('/')
+                        }
+                    }
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($retryUrl) -and -not $retryUrl.Equals($Url, [System.StringComparison]::OrdinalIgnoreCase))
+                {
+                    $decodedRetryUrl = [Uri]::UnescapeDataString($retryUrl)
+                    Write-Verbose "Retrying folder lookup with site-relative URL '$decodedRetryUrl' (original '$Url')."
+                    return (Get-PnPFolder -Url $decodedRetryUrl -AsListItem -Connection $Connection -ErrorAction Stop)
+                }
+
+                throw
+            }
         }
     }
 
@@ -787,7 +826,7 @@ begin
 
             Write-SboFunctionVerbose -FunctionName 'Invoke-SboDisconnectPnPOnline' -Parameters @{ Connection = $Connection }
 
-            Disconnect-PnPOnline -ErrorAction SilentlyContinue
+           # Disconnect-PnPOnline -ErrorAction SilentlyContinue
         }
     }
 
@@ -1025,22 +1064,51 @@ process
                 $PathSegments = @($NormalizedPath.Split('/', [System.StringSplitOptions]::RemoveEmptyEntries))
             }
 
-            if ($PathSegments.Count -gt 0 -and $PathSegments[0].Equals($ResolvedLibraryTitle, [System.StringComparison]::OrdinalIgnoreCase))
+            # Box exports can include root placeholders (for example, "Documents" or "All Files").
+            # Remove those leading markers so URLs resolve under the actual library root.
+            while ($PathSegments.Count -gt 0)
             {
-                if ($PathSegments.Count -gt 1)
+                $firstSegment = [string] $PathSegments[0]
+                $isLibraryTitleSegment = $firstSegment.Equals($ResolvedLibraryTitle, [System.StringComparison]::OrdinalIgnoreCase)
+                $isAllFilesSegment = $firstSegment.Equals('All Files', [System.StringComparison]::OrdinalIgnoreCase)
+
+                if ($isLibraryTitleSegment -or $isAllFilesSegment)
                 {
-                    $PathSegments = @($PathSegments[1..($PathSegments.Count - 1)])
+                    if ($PathSegments.Count -gt 1)
+                    {
+                        $PathSegments = @($PathSegments[1..($PathSegments.Count - 1)])
+                    }
+                    else
+                    {
+                        $PathSegments = @()
+                    }
+
+                    continue
                 }
-                else
-                {
-                    $PathSegments = @()
-                }
+
+                break
             }
 
             $ItemNameSegment = [string] $Item.'Item Name'
-            $AllPathSegments = @($PathSegments + $ItemNameSegment)
+            $AllPathSegments = @($PathSegments)
+
+            # Some exports include the item name as the final Path segment.
+            # Avoid appending it twice (for example: /Folder/Folder).
+            $alreadyEndsWithItemName = ($AllPathSegments.Count -gt 0) -and $AllPathSegments[$AllPathSegments.Count - 1].Equals($ItemNameSegment, [System.StringComparison]::OrdinalIgnoreCase)
+            if (-not [string]::IsNullOrWhiteSpace($ItemNameSegment) -and -not $alreadyEndsWithItemName)
+            {
+                $AllPathSegments += $ItemNameSegment
+            }
+
             $EncodedRelativePath = ($AllPathSegments | ForEach-Object { [Uri]::EscapeDataString([string] $_) }) -join '/'
-            $ItemServerRelativeUrl = ($ResolvedLibraryRootServerRelativeUrl.TrimEnd('/') + '/' + $EncodedRelativePath)
+            if ([string]::IsNullOrWhiteSpace($EncodedRelativePath))
+            {
+                $ItemServerRelativeUrl = $ResolvedLibraryRootServerRelativeUrl.TrimEnd('/')
+            }
+            else
+            {
+                $ItemServerRelativeUrl = ($ResolvedLibraryRootServerRelativeUrl.TrimEnd('/') + '/' + $EncodedRelativePath)
+            }
             $ItemAbsoluteUrl = ("{0}{1}" -f ([Uri] $PersonalSiteUrl).GetLeftPart([System.UriPartial]::Authority), $ItemServerRelativeUrl)
 
             Write-LogLine -Message "Processing item '$($Item.'Item Name')' ($($Item.'Item Type')) for collaborator '$($Item.'Collaborator Login')' with mapped role '$MappedPermissionLevel'."

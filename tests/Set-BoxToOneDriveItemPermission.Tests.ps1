@@ -90,6 +90,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         }
 
         $global:CapturedGetFileUrls = @()
+        $global:CapturedGetFolderUrls = @()
         $global:CapturedPermissionCalls = @()
         $global:CapturedLogLines = @()
 
@@ -211,7 +212,15 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
             $global:CapturedGetFileUrls += $Url
             [PSCustomObject]@{ Id = 101 }
         }
-        Mock Invoke-SboGetPnPFolderAsListItem { [PSCustomObject]@{ Id = 202 } }
+        Mock Invoke-SboGetPnPFolderAsListItem {
+            param(
+                [string] $Url,
+                [object] $Connection
+            )
+
+            $global:CapturedGetFolderUrls += $Url
+            [PSCustomObject]@{ Id = 202 }
+        }
         Mock Invoke-SboSetPnPListItemPermission {
             param(
                 [string] $List,
@@ -324,6 +333,49 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         @($result)[0].ItemUrl.AbsoluteUri | Should -Be $expectedAbsoluteUrl
         Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
         $global:CapturedPermissionCalls[0].AddRole | Should -Be 'Read'
+    }
+
+    It 'strips leading All Files segment when building item URL' {
+        # Arrange
+        $global:TestCsvRows = @(
+            New-BoxRow -CollaboratorPermission 'Viewer' -Path 'Documents/All Files' -ItemName 'SampleFile.docx'
+        )
+        $expectedServerRelativeUrl = '/personal/user_contoso_onmicrosoft_com/Documents/SampleFile.docx'
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 1
+        $global:CapturedGetFileUrls[0] | Should -Be $expectedServerRelativeUrl
+        Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
+    }
+
+    It 'does not duplicate folder name when path already ends with item name' {
+        # Arrange
+        $folderName = 'Thesis (Mapping IPv6 Mobile Providers)'
+        $global:TestCsvRows = @(
+            New-BoxRow -CollaboratorPermission 'Editor' -ItemType 'Folder' -Path ("Documents/All Files/{0}" -f $folderName) -ItemName $folderName
+        )
+        $expectedServerRelativeUrl = '/personal/user_contoso_onmicrosoft_com/Documents/Thesis%20%28Mapping%20IPv6%20Mobile%20Providers%29'
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+        }
+
+        # Act
+        $result = & $script:ScriptUnderTest @invokeParams
+
+        # Assert
+        @($result).Count | Should -Be 1
+        $global:CapturedGetFolderUrls[0] | Should -Be $expectedServerRelativeUrl
+        Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
     }
 
     It 'does not disconnect reused connections that were not created by this run' {
