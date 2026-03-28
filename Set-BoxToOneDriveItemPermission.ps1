@@ -1074,20 +1074,36 @@ process
 
             } # ProcessedItem
             
-            if($ProcessedItem.'Item Type' -eq "File")
+            try
             {
-                # Retrieve the SharePoint list item for a file using its server-relative path.
-                # -AsListItem returns a list item object whose .Id property is the numeric list item ID.
-                $PNPFile = Invoke-SboGetPnPFileAsListItem -Url $ItemServerRelativeUrl -Connection $PersonalSiteConnection
-                $ProcessedItem.ListItemID = $PNPFile.Id
-            } # if($ProcessedItem.'Item Type' -eq "File")
-            else
+                if($ProcessedItem.'Item Type' -eq "File")
+                {
+                    # Retrieve the SharePoint list item for a file using its server-relative path.
+                    # -AsListItem returns a list item object whose .Id property is the numeric list item ID.
+                    $PNPFile = Invoke-SboGetPnPFileAsListItem -Url $ItemServerRelativeUrl -Connection $PersonalSiteConnection
+                    $ProcessedItem.ListItemID = $PNPFile.Id
+                } # if($ProcessedItem.'Item Type' -eq "File")
+                else
+                {
+                    # For folders, use Get-PnPFolder instead. The same server-relative path
+                    # convention applies; SharePoint distinguishes files and folders internally.
+                    $PNPFolder = Invoke-SboGetPnPFolderAsListItem -Url $ItemServerRelativeUrl -Connection $PersonalSiteConnection
+                    $ProcessedItem.ListItemID = $PNPFolder.Id
+                } # else
+
+                if (-not $ProcessedItem.ListItemID)
+                {
+                    throw "Item not found at '$ItemServerRelativeUrl'."
+                }
+            }
+            catch
             {
-                # For folders, use Get-PnPFolder instead. The same server-relative path
-                # convention applies; SharePoint distinguishes files and folders internally.
-                $PNPFolder = Invoke-SboGetPnPFolderAsListItem -Url $ItemServerRelativeUrl -Connection $PersonalSiteConnection
-                $ProcessedItem.ListItemID = $PNPFolder.Id
-            } # else
+                $ProcessedItem.PermissionChangeStatus = 'Failed'
+                $ProcessedItem.PermissionChangeError  = "Lookup failed: $($_.Exception.Message)"
+                Write-LogLine -Level ERROR -Message "Lookup failed for '$($ProcessedItem.'Item Name')' at '$ItemServerRelativeUrl': $($ProcessedItem.PermissionChangeError)"
+                Write-Output $ProcessedItem
+                continue
+            }
 
             # Apply permission updates under WhatIf/Confirm control.
             if ($ProcessedItem.PermissionLevel -eq 'None')

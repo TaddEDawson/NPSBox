@@ -449,6 +449,48 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
     }
 
+    It 'marks item as failed and continues when file or folder lookup throws' {
+        # Arrange
+        $global:TestCsvRows = @(
+            New-BoxRow -CollaboratorPermission 'Editor' -ItemType 'File' -Path 'Documents/FolderA' -ItemName 'Missing.docx' -CollaboratorLogin 'first@contoso.com'
+            New-BoxRow -CollaboratorPermission 'Viewer' -ItemType 'File' -Path 'Documents/FolderA' -ItemName 'Exists.docx' -CollaboratorLogin 'second@contoso.com'
+        )
+
+        Mock Invoke-SboGetPnPFileAsListItem {
+            param(
+                [string] $Url,
+                [object] $Connection
+            )
+
+            if ($Url -like '*Missing.docx') {
+                throw 'File Not Found.'
+            }
+
+            $global:CapturedGetFileUrls += $Url
+            [PSCustomObject]@{ Id = 101 }
+        }
+
+        $errors = @()
+        $invokeParams = @{
+            InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
+            UserToProcess = $script:DefaultUser
+            LogFolder = $TestDrive
+            ErrorAction = 'SilentlyContinue'
+            ErrorVariable = 'errors'
+        }
+
+        # Act
+        $result = @(& $script:ScriptUnderTest @invokeParams)
+
+        # Assert
+        @($errors | ForEach-Object { $_.ToString() } | Where-Object { $_ -match 'Unhandled error while processing user|does not have a PersonalSiteUrl' }) | Should -BeNullOrEmpty
+        $result.Count | Should -Be 2
+        ($result | Where-Object { $_.'Item Name' -eq 'Missing.docx' }).PermissionChangeStatus | Should -Be 'Failed'
+        ($result | Where-Object { $_.'Item Name' -eq 'Missing.docx' }).PermissionChangeError | Should -Match '^Lookup failed:'
+        ($result | Where-Object { $_.'Item Name' -eq 'Exists.docx' }).PermissionChangeStatus | Should -Be 'Applied'
+        Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
+    }
+
     It 'creates and disconnects both admin and personal connections when none exist' {
         # Arrange
         # First connection check returns null (host connection required),
