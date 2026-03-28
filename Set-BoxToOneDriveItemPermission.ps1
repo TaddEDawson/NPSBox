@@ -339,7 +339,8 @@ begin
 
         if ($Profile -is [System.Collections.IDictionary])
         {
-            if ($Profile.Contains($PropertyName))
+            $dictionaryKeys = @($Profile.Keys | ForEach-Object { [string] $_ })
+            if ($dictionaryKeys -contains $PropertyName)
             {
                 $dictionaryValue = [string] $Profile[$PropertyName]
                 if (-not [string]::IsNullOrWhiteSpace($dictionaryValue))
