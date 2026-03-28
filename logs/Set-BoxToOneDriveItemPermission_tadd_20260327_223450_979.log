@@ -1,0 +1,15 @@
+2026-03-27T22:34:50.981-04:00 [INFO] [L863] BEGIN Script: User=tadd, InputFile=C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv, MySiteHostUrl=https://m365cpi19595461-my.sharepoint.com, SharePointOnlineAdminUrl=https://m365cpi19595461-admin.sharepoint.com/, AllowUnknownRole=False, TargetLibraryTitle=Documents, AutoDiscoverDefaultLibrary=False
+2026-03-27T22:34:50.984-04:00 [INFO] [L873] BEGIN User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com
+2026-03-27T22:34:51.011-04:00 [INFO] [L888] Reusing existing admin-scoped PnP connection.
+2026-03-27T22:34:51.886-04:00 [INFO] [L903] Profile properties for 'AdilE@M365CPI19595461.OnMicrosoft.com': PersonalSiteHostUrl='https://m365cpi19595461-my.sharepoint.com:443/', PersonalSpace='/personal/adile_m365cpi19595461_onmicrosoft_com/', PersonalUrl='https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/'
+2026-03-27T22:34:51.916-04:00 [INFO] [L911] Resolved personal site URL for AdilE@M365CPI19595461.OnMicrosoft.com: https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/
+2026-03-27T22:34:51.946-04:00 [INFO] [L938] Processing 4 items for user AdilE@M365CPI19595461.OnMicrosoft.com
+2026-03-27T22:34:56.753-04:00 [INFO] [L957] Created new personal-site PnP connection: https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/
+2026-03-27T22:34:57.415-04:00 [INFO] [L988] Using target library 'Documents' with root path '/personal/adile_m365cpi19595461_onmicrosoft_com/Documents'.
+2026-03-27T22:34:57.450-04:00 [INFO] [L1046] Processing item 'SampleFile.docx' (File) for collaborator 'AmberR@M365CPI19595461.onmicrosoft.com' with mapped role 'Contributor'.
+2026-03-27T22:34:58.220-04:00 [ERROR] [L1122] Failed to apply role 'Contribute' for 'AmberR@M365CPI19595461.onmicrosoft.com' on 'SampleFile.docx': The provided list item through the Identity parameter could not be found
+2026-03-27T22:34:58.260-04:00 [INFO] [L1046] Processing item 'Thesis (Mapping IPv6 Mobile Providers)' (Folder) for collaborator 'AmberR@M365CPI19595461.onmicrosoft.com' with mapped role 'Contributor'.
+2026-03-27T22:34:58.506-04:00 [ERROR] [L1147] Unhandled error while processing user 'AdilE@M365CPI19595461.OnMicrosoft.com': File Not Found.
+2026-03-27T22:34:58.623-04:00 [INFO] [L1158] Disconnected personal-site PnP connection for user 'AdilE@M365CPI19595461.OnMicrosoft.com'.
+2026-03-27T22:34:58.657-04:00 [INFO] [L1169] END User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com; Duration=00:00:07.672
+2026-03-27T22:34:58.693-04:00 [INFO] [L1177] END Script: Duration=00:00:07.711; LogFile=C:\Repos\NPSBox\Logs\Set-BoxToOneDriveItemPermission_tadd_20260327_223450_979.log
