@@ -787,7 +787,7 @@ begin
 
             Write-SboFunctionVerbose -FunctionName 'Invoke-SboDisconnectPnPOnline' -Parameters @{ Connection = $Connection }
 
-            Disconnect-PnPOnline -Connection $Connection -ErrorAction SilentlyContinue
+            Disconnect-PnPOnline -ErrorAction SilentlyContinue
         }
     }
 
