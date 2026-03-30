@@ -549,7 +549,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         Assert-MockCalled Invoke-SboSetPnPListItemPermission -Times 1
     }
 
-    It 'creates and disconnects both admin and personal connections when none exist' {
+    It 'creates both admin and personal connections when none exist' {
         # Arrange
         # First connection check returns null (host connection required),
         # second check for personal connection also returns null.
@@ -566,7 +566,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
 
         # Assert
         Assert-MockCalled Invoke-SboConnectPnPOnline -Times 2
-        Assert-MockCalled Invoke-SboDisconnectPnPOnline -Times 2
+        Assert-MockCalled Invoke-SboDisconnectPnPOnline -Times 0
     }
 
     It 'uses SharePointOnlineAdminUrl when creating the admin-scoped connection' {

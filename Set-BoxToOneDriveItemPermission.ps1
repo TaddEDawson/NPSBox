@@ -16,7 +16,7 @@
                         ShouldProcess semantics (supports -WhatIf and -Confirm).
           - Emits a structured object per item containing the original Box metadata
                         alongside the resolved SharePoint list item ID and a normalised permission level.
-                    - Closes the personal-site PnP connection when processing completes.
+                    - Leaves PnP connections open so they can be reused across runs in the same session.
 
         The output objects can be piped into downstream steps that apply SharePoint
         permissions, produce migration reports, or feed into other automation workflows.
@@ -814,33 +814,8 @@ begin
         }
     }
 
-    if (-not (Get-Command -Name Invoke-SboDisconnectPnPOnline -ErrorAction SilentlyContinue))
-    {
-        function Invoke-SboDisconnectPnPOnline
-        {
-            <#
-            .SYNOPSIS
-                Disconnects a provided PnP connection.
-
-            .PARAMETER Connection
-                Active PnP connection to disconnect.
-            #>
-            [CmdletBinding()]
-            param
-            (
-                [Parameter(Mandatory = $true)]
-                [object] $Connection
-            )
-
-            Write-SboFunctionVerbose -FunctionName 'Invoke-SboDisconnectPnPOnline' -Parameters @{ Connection = $Connection }
-
-            Disconnect-PnPOnline -ErrorAction SilentlyContinue
-        }
-    }
-
     # Cache the admin-scoped connection for reuse across pipeline users.
     $script:SboAdminConnection = $null
-    $script:SboAdminConnectionCreated = $false
 
     $ScriptStartTime = Get-Date
     $RunUserName = if ([string]::IsNullOrWhiteSpace($env:USERNAME)) { [Environment]::UserName } else { $env:USERNAME }
@@ -953,7 +928,6 @@ process
         {
             $CurrentConnection = Invoke-SboConnectPnPOnline -Url $normalizedAdminUrl -ClientId $ClientId
             $script:SboAdminConnection = $CurrentConnection
-            $script:SboAdminConnectionCreated = $true
             Write-LogLine -Message "Created new SharePoint Online admin PnP connection: $SharePointOnlineAdminUrl"
         }
         else
@@ -1269,13 +1243,7 @@ process
     }
     finally
     {
-        # Disconnect only connections created by this script invocation.
-        if ($CreatedPersonalConnection -and $PersonalSiteConnection)
-        {
-            Invoke-SboDisconnectPnPOnline -Connection $PersonalSiteConnection
-            Write-LogLine -Message "Disconnected personal-site PnP connection for user '$UserToProcess'."
-            Write-Verbose "Disconnected PnP connection for $UserToProcess"
-        }
+        # Keep connections available for reuse in the current session.
 
         $UserDuration = New-TimeSpan -Start $UserStartTime -End (Get-Date)
         Write-LogLine -Message ("END User Processing: UserToProcess={0}; Duration={1:hh\:mm\:ss\.fff}" -f $UserToProcess, $UserDuration)
@@ -1285,12 +1253,6 @@ process
 
 end
 {
-    if ($script:SboAdminConnectionCreated -and $script:SboAdminConnection)
-    {
-        Invoke-SboDisconnectPnPOnline -Connection $script:SboAdminConnection
-        Write-LogLine -Message "Disconnected admin-scoped PnP connection."
-    }
-
     $ScriptDuration = New-TimeSpan -Start $ScriptStartTime -End (Get-Date)
     Write-LogLine -Message ("END Script: Duration={0:hh\:mm\:ss\.fff}; LogFile={1}" -f $ScriptDuration, $LogFilePath)
 }
