@@ -146,6 +146,14 @@
         Processes multiple users by piping user principal names into UserToProcess.
 
     .EXAMPLE
+        Import-Csv -Path "C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv" |
+            Select-Object -ExpandProperty "Owner Login" -Unique |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            .\Set-BoxToOneDriveItemPermission.ps1 -InputFile "C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv" -Verbose
+
+        Reads unique owners from the CSV file and processes each user through the pipeline.
+
+    .EXAMPLE
         .\Set-BoxToOneDriveItemPermission.ps1 -UserToProcess "JaneD@contoso.OnMicrosoft.com" -WhatIf -Verbose
 
         Shows the permission changes that would be made without approving them.
@@ -830,6 +838,10 @@ begin
         }
     }
 
+    # Cache the admin-scoped connection for reuse across pipeline users.
+    $script:SboAdminConnection = $null
+    $script:SboAdminConnectionCreated = $false
+
     $ScriptStartTime = Get-Date
     $RunUserName = if ([string]::IsNullOrWhiteSpace($env:USERNAME)) { [Environment]::UserName } else { $env:USERNAME }
     $SafeRunUserName = ($RunUserName -replace '[^a-zA-Z0-9_.-]', '_')
@@ -906,20 +918,42 @@ process
 {
     $PersonalSiteConnection = $null
     $CurrentConnection = $null
-    $CreatedAdminConnection = $false
     $CreatedPersonalConnection = $false
     $UserStartTime = Get-Date
     Write-LogLine -Message "BEGIN User Processing: UserToProcess=$UserToProcess"
 
     try
     {
-        # Ensure there is an admin-scoped PnP connection available for profile lookup.
-        # If none exists, create one using SharePointOnlineAdminUrl.
-        $CurrentConnection = Invoke-SboGetPnPConnection
+        # Reuse the admin-scoped connection across pipeline users when possible.
+        $normalizedAdminUrl = ([Uri] $SharePointOnlineAdminUrl).AbsoluteUri.TrimEnd('/')
+        if ($script:SboAdminConnection -and $script:SboAdminConnection.PSObject -and $script:SboAdminConnection.PSObject.Properties['Url'])
+        {
+            $cachedAdminUrl = ([Uri] ([string] $script:SboAdminConnection.Url)).AbsoluteUri.TrimEnd('/')
+            if ($cachedAdminUrl.Equals($normalizedAdminUrl, [System.StringComparison]::OrdinalIgnoreCase))
+            {
+                $CurrentConnection = $script:SboAdminConnection
+            }
+        }
+
         if (-not $CurrentConnection)
         {
-            $CurrentConnection = Invoke-SboConnectPnPOnline -Url $SharePointOnlineAdminUrl -ClientId $ClientId
-            $CreatedAdminConnection = $true
+            $existingConnection = Invoke-SboGetPnPConnection
+            if ($existingConnection -and $existingConnection.PSObject -and $existingConnection.PSObject.Properties['Url'])
+            {
+                $existingConnectionUrl = ([Uri] ([string] $existingConnection.Url)).AbsoluteUri.TrimEnd('/')
+                if ($existingConnectionUrl.Equals($normalizedAdminUrl, [System.StringComparison]::OrdinalIgnoreCase))
+                {
+                    $CurrentConnection = $existingConnection
+                    $script:SboAdminConnection = $CurrentConnection
+                }
+            }
+        }
+
+        if (-not $CurrentConnection)
+        {
+            $CurrentConnection = Invoke-SboConnectPnPOnline -Url $normalizedAdminUrl -ClientId $ClientId
+            $script:SboAdminConnection = $CurrentConnection
+            $script:SboAdminConnectionCreated = $true
             Write-LogLine -Message "Created new SharePoint Online admin PnP connection: $SharePointOnlineAdminUrl"
         }
         else
@@ -1243,12 +1277,6 @@ process
             Write-Verbose "Disconnected PnP connection for $UserToProcess"
         }
 
-        if ($CreatedAdminConnection -and $CurrentConnection)
-        {
-            Invoke-SboDisconnectPnPOnline -Connection $CurrentConnection
-            Write-LogLine -Message "Disconnected admin-scoped PnP connection for user '$UserToProcess'."
-        }
-
         $UserDuration = New-TimeSpan -Start $UserStartTime -End (Get-Date)
         Write-LogLine -Message ("END User Processing: UserToProcess={0}; Duration={1:hh\:mm\:ss\.fff}" -f $UserToProcess, $UserDuration)
     }
@@ -1257,6 +1285,12 @@ process
 
 end
 {
+    if ($script:SboAdminConnectionCreated -and $script:SboAdminConnection)
+    {
+        Invoke-SboDisconnectPnPOnline -Connection $script:SboAdminConnection
+        Write-LogLine -Message "Disconnected admin-scoped PnP connection."
+    }
+
     $ScriptDuration = New-TimeSpan -Start $ScriptStartTime -End (Get-Date)
     Write-LogLine -Message ("END Script: Duration={0:hh\:mm\:ss\.fff}; LogFile={1}" -f $ScriptDuration, $LogFilePath)
 }

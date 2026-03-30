@@ -297,6 +297,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         $invokeParams = @{
             InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
             UserToProcess = $script:DefaultUser
+            SharePointOnlineAdminUrl = 'https://contoso-admin.sharepoint.com/'
             LogFolder = $TestDrive
         }
 
@@ -319,6 +320,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         $invokeParams = @{
             InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
             UserToProcess = $script:DefaultUser
+            SharePointOnlineAdminUrl = 'https://contoso-admin.sharepoint.com/'
             LogFolder = $TestDrive
         }
 
@@ -344,6 +346,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         $invokeParams = @{
             InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
             UserToProcess = $script:DefaultUser
+            SharePointOnlineAdminUrl = 'https://contoso-admin.sharepoint.com/'
             LogFolder = $TestDrive
         }
 
@@ -366,6 +369,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         $invokeParams = @{
             InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
             UserToProcess = $script:DefaultUser
+            SharePointOnlineAdminUrl = 'https://contoso-admin.sharepoint.com/'
             LogFolder = $TestDrive
         }
 
@@ -390,6 +394,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         $invokeParams = @{
             InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
             UserToProcess = $script:DefaultUser
+            SharePointOnlineAdminUrl = 'https://contoso-admin.sharepoint.com/'
             LogFolder = $TestDrive
         }
 
@@ -412,6 +417,7 @@ Describe 'Set-BoxToOneDriveItemPermission.ps1' {
         $invokeParams = @{
             InputFile = (Join-Path -Path $TestDrive -ChildPath 'input.csv')
             UserToProcess = $script:DefaultUser
+            SharePointOnlineAdminUrl = 'https://contoso-admin.sharepoint.com/'
             LogFolder = $TestDrive
         }
 
