@@ -1,0 +1,28 @@
+2026-03-30T17:30:44.748-04:00 [INFO] [L889] BEGIN Script: User=tadd, InputFile=C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv, MySiteHostUrl=https://m365cpi19595461-my.sharepoint.com, SharePointOnlineAdminUrl=https://m365cpi19595461-admin.sharepoint.com/, AllowUnknownRole=False, TargetLibraryTitle=Documents, AutoDiscoverDefaultLibrary=False
+2026-03-30T17:30:44.801-04:00 [INFO] [L898] BEGIN User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com
+2026-03-30T17:30:44.831-04:00 [INFO] [L935] Reusing existing admin-scoped PnP connection.
+2026-03-30T17:30:45.870-04:00 [INFO] [L950] Profile properties for 'AdilE@M365CPI19595461.OnMicrosoft.com': PersonalSiteHostUrl='https://m365cpi19595461-my.sharepoint.com:443/', PersonalSpace='/personal/adile_m365cpi19595461_onmicrosoft_com/', PersonalUrl='https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/'
+2026-03-30T17:30:45.896-04:00 [INFO] [L958] Resolved personal site URL for AdilE@M365CPI19595461.OnMicrosoft.com: https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/
+2026-03-30T17:30:45.926-04:00 [INFO] [L985] Processing 4 items for user AdilE@M365CPI19595461.OnMicrosoft.com
+2026-03-30T17:30:50.237-04:00 [INFO] [L1004] Created new personal-site PnP connection: https://m365cpi19595461-my.sharepoint.com/personal/adile_m365cpi19595461_onmicrosoft_com/
+2026-03-30T17:30:52.102-04:00 [INFO] [L1035] Using target library 'Documents' with root path '/personal/adile_m365cpi19595461_onmicrosoft_com/Documents'.
+2026-03-30T17:30:52.140-04:00 [INFO] [L1122] Processing item 'SampleFile.docx' (File) for collaborator 'AmberR@M365CPI19595461.onmicrosoft.com' with mapped role 'Contributor'.
+2026-03-30T17:30:54.452-04:00 [INFO] [L1208] Applied role 'Contribute' for 'AmberR@M365CPI19595461.onmicrosoft.com' on 'SampleFile.docx'.
+2026-03-30T17:30:54.492-04:00 [INFO] [L1122] Processing item 'Thesis (Mapping IPv6 Mobile Providers)' (Folder) for collaborator 'AmberR@M365CPI19595461.onmicrosoft.com' with mapped role 'Contributor'.
+2026-03-30T17:30:56.764-04:00 [INFO] [L1208] Applied role 'Contribute' for 'AmberR@M365CPI19595461.onmicrosoft.com' on 'Thesis (Mapping IPv6 Mobile Providers)'.
+2026-03-30T17:30:56.809-04:00 [INFO] [L1122] Processing item 'Thesis (Mapping IPv6 Mobile Providers)' (Folder) for collaborator 'BillieV@M365CPI19595461.onmicrosoft.com' with mapped role 'Viewer'.
+2026-03-30T17:30:59.382-04:00 [INFO] [L1208] Applied role 'Read' for 'BillieV@M365CPI19595461.onmicrosoft.com' on 'Thesis (Mapping IPv6 Mobile Providers)'.
+2026-03-30T17:30:59.421-04:00 [INFO] [L1122] Processing item 'Thesis (Mapping IPv6 Mobile Providers)' (Folder) for collaborator 'CoraT@M365CPI19595461.onmicrosoft.com' with mapped role 'Contributor'.
+2026-03-30T17:31:02.470-04:00 [INFO] [L1208] Applied role 'Contribute' for 'CoraT@M365CPI19595461.onmicrosoft.com' on 'Thesis (Mapping IPv6 Mobile Providers)'.
+2026-03-30T17:31:02.508-04:00 [INFO] [L1249] END User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com; Duration=00:00:17.706
+2026-03-30T17:31:02.540-04:00 [INFO] [L898] BEGIN User Processing: UserToProcess=AmberR@M365CPI19595461.onmicrosoft.com
+2026-03-30T17:31:02.570-04:00 [INFO] [L935] Reusing existing admin-scoped PnP connection.
+2026-03-30T17:31:03.089-04:00 [INFO] [L950] Profile properties for 'AmberR@M365CPI19595461.onmicrosoft.com': PersonalSiteHostUrl='https://m365cpi19595461-my.sharepoint.com:443/', PersonalSpace='/personal/amberr_m365cpi19595461_onmicrosoft_com/', PersonalUrl='https://m365cpi19595461-my.sharepoint.com/personal/amberr_m365cpi19595461_onmicrosoft_com/'
+2026-03-30T17:31:03.122-04:00 [INFO] [L958] Resolved personal site URL for AmberR@M365CPI19595461.onmicrosoft.com: https://m365cpi19595461-my.sharepoint.com/personal/amberr_m365cpi19595461_onmicrosoft_com/
+2026-03-30T17:31:03.158-04:00 [INFO] [L985] Processing 1 items for user AmberR@M365CPI19595461.onmicrosoft.com
+2026-03-30T17:31:06.781-04:00 [INFO] [L1004] Created new personal-site PnP connection: https://m365cpi19595461-my.sharepoint.com/personal/amberr_m365cpi19595461_onmicrosoft_com/
+2026-03-30T17:31:07.426-04:00 [INFO] [L1035] Using target library 'Documents' with root path '/personal/amberr_m365cpi19595461_onmicrosoft_com/Documents'.
+2026-03-30T17:31:07.455-04:00 [ERROR] [L1059] Unknown Box role 'AdilE@M365CPI19595461.OnMicrosoft.com' for item 'Thunderbolt Specifications v1.0.docx' and collaborator 'File'.
+2026-03-30T17:31:07.482-04:00 [ERROR] [L1239] Unhandled error while processing user 'AmberR@M365CPI19595461.onmicrosoft.com': Unknown Box role 'AdilE@M365CPI19595461.OnMicrosoft.com' for item 'Thunderbolt Specifications v1.0.docx' and collaborator 'File'. Add a mapping or run with -AllowUnknownRole.
+2026-03-30T17:31:07.605-04:00 [INFO] [L1249] END User Processing: UserToProcess=AmberR@M365CPI19595461.onmicrosoft.com; Duration=00:00:05.064
+2026-03-30T17:31:07.632-04:00 [INFO] [L1257] END Script: Duration=00:00:22.884; LogFile=C:\Repos\NPSBox\Logs\Set-BoxToOneDriveItemPermission_tadd_20260330_173044_747.log
