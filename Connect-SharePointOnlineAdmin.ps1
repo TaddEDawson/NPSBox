@@ -42,5 +42,5 @@ process
     catch
     {
         Write-Error -Message "Failed to connect to SharePoint Online Admin Center: $SharePointAdminUrl. Error: $_"
-    }
+    } # catch
 } # process
