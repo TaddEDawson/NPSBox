@@ -1,6 +1,7 @@
+# Synchronization of permissions on OneDrive Microsoft Commercial Cloud
 
 ```powershell
-https://learn.microsoft.com/en-us/sharepoint/list-onedrive-urls 
+# https://learn.microsoft.com/en-us/sharepoint/list-onedrive-urls 
 
 Import-Module PNP.PowerShell
 
