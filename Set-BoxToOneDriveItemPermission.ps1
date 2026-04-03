@@ -893,7 +893,6 @@ process
 {
     $PersonalSiteConnection = $null
     $CurrentConnection = $null
-    $CreatedPersonalConnection = $false
     $UserStartTime = Get-Date
     Write-LogLine -Message "BEGIN User Processing: UserToProcess=$UserToProcess"
 
@@ -1000,7 +999,6 @@ process
         else
         {
             $PersonalSiteConnection = Invoke-SboConnectPnPOnline -Url $PersonalSiteUrl -ClientId $ClientId
-            $CreatedPersonalConnection = $true
             Write-LogLine -Message "Created new personal-site PnP connection: $PersonalSiteUrl"
             Write-Verbose "Created new PnP connection for $PersonalSiteUrl"
         }
