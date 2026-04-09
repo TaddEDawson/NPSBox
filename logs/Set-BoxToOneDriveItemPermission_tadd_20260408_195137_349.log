@@ -1,0 +1,10 @@
+2026-04-08T19:51:37.354-04:00 [INFO] [L958] BEGIN Script: User=tadd, InputFile=C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv, MySiteHostUrl=https://m365cpi19595461-my.sharepoint.com, SharePointOnlineAdminUrl=https://m365cpi19595461-admin.sharepoint.com/, AuthMode=ManagedIdentity, AllowUnknownRole=False, TargetLibraryTitle=Documents, AutoDiscoverDefaultLibrary=False
+2026-04-08T19:51:37.362-04:00 [INFO] [L966] BEGIN User Processing: UserToProcess=AmberR@M365CPI19595461.onmicrosoft.com
+2026-04-08T19:51:37.411-04:00 [INFO] [L1003] Reusing existing admin-scoped PnP connection.
+2026-04-08T19:51:38.893-04:00 [INFO] [L1018] Profile properties for 'AmberR@M365CPI19595461.onmicrosoft.com': PersonalSiteHostUrl='https://m365cpi19595461-my.sharepoint.com:443/', PersonalSpace='/personal/amberr_m365cpi19595461_onmicrosoft_com/', PersonalUrl='https://m365cpi19595461-my.sharepoint.com/personal/amberr_m365cpi19595461_onmicrosoft_com/'
+2026-04-08T19:51:38.934-04:00 [INFO] [L1026] Resolved personal site URL for AmberR@M365CPI19595461.onmicrosoft.com: https://m365cpi19595461-my.sharepoint.com/personal/amberr_m365cpi19595461_onmicrosoft_com/
+2026-04-08T19:51:38.983-04:00 [INFO] [L1053] Processing 2 items for user AmberR@M365CPI19595461.onmicrosoft.com
+2026-04-08T19:51:39.039-04:00 [INFO] [L1071] Created new personal-site PnP connection: https://m365cpi19595461-my.sharepoint.com/personal/amberr_m365cpi19595461_onmicrosoft_com/
+2026-04-08T19:58:19.231-04:00 [ERROR] [L1306] Unhandled error while processing user 'AmberR@M365CPI19595461.onmicrosoft.com': Request to the endpoint timed out.
+2026-04-08T19:58:19.790-04:00 [INFO] [L1316] END User Processing: UserToProcess=AmberR@M365CPI19595461.onmicrosoft.com; Duration=00:06:42.426
+2026-04-08T19:58:19.833-04:00 [INFO] [L1324] END Script: Duration=00:06:42.479; LogFile=C:\Repos\NPSBox\Logs\Set-BoxToOneDriveItemPermission_tadd_20260408_195137_349.log

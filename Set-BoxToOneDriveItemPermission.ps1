@@ -228,6 +228,25 @@ param
     [string] $ClientId = "23d1b32e-e6fb-4c4e-9e0b-29d28b6bb563"
     ,
     [Parameter()]
+    [ValidateSet('Interactive', 'Certificate', 'ManagedIdentity', 'WorkloadIdentity', 'AccessToken')]
+    [string] $AuthMode = 'ManagedIdentity'
+    ,
+    [Parameter()]
+    [string] $Tenant
+    ,
+    [Parameter()]
+    [string] $CertificateThumbprint
+    ,
+    [Parameter()]
+    [string] $CertificatePath
+    ,
+    [Parameter()]
+    [securestring] $CertificatePassword
+    ,
+    [Parameter()]
+    [string] $AccessToken
+    ,
+    [Parameter()]
     [switch] $AllowUnknownRole
     ,
     [Parameter()]
@@ -464,9 +483,59 @@ begin
                 [string] $ClientId
             )
 
-            Write-SboFunctionVerbose -FunctionName 'Invoke-SboConnectPnPOnline' -Parameters @{ Url = $Url; ClientId = $ClientId }
+            Write-SboFunctionVerbose -FunctionName 'Invoke-SboConnectPnPOnline' -Parameters @{ Url = $Url; ClientId = $ClientId; AuthMode = $AuthMode; Tenant = $Tenant; CertificateThumbprint = $CertificateThumbprint; CertificatePath = $CertificatePath; HasCertificatePassword = ($null -ne $CertificatePassword); HasAccessToken = (-not [string]::IsNullOrWhiteSpace($AccessToken)) }
 
-            Connect-PnPOnline -Url $Url -ClientId $ClientId -Interactive -ReturnConnection
+            switch ($AuthMode)
+            {
+                'ManagedIdentity'
+                {
+                    Connect-PnPOnline -Url $Url -ManagedIdentity -ReturnConnection
+                }
+                'WorkloadIdentity'
+                {
+                    Connect-PnPOnline -Url $Url -AzureADWorkloadIdentity -ReturnConnection
+                }
+                'AccessToken'
+                {
+                    if ([string]::IsNullOrWhiteSpace($AccessToken))
+                    {
+                        throw "AuthMode 'AccessToken' requires -AccessToken."
+                    }
+
+                    Connect-PnPOnline -Url $Url -AccessToken $AccessToken -ReturnConnection
+                }
+                'Certificate'
+                {
+                    if ([string]::IsNullOrWhiteSpace($Tenant))
+                    {
+                        throw "AuthMode 'Certificate' requires -Tenant."
+                    }
+
+                    if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint))
+                    {
+                        Connect-PnPOnline -Url $Url -ClientId $ClientId -Tenant $Tenant -Thumbprint $CertificateThumbprint -ReturnConnection
+                    }
+                    elseif (-not [string]::IsNullOrWhiteSpace($CertificatePath))
+                    {
+                        if ($null -ne $CertificatePassword)
+                        {
+                            Connect-PnPOnline -Url $Url -ClientId $ClientId -Tenant $Tenant -CertificatePath $CertificatePath -CertificatePassword $CertificatePassword -ReturnConnection
+                        }
+                        else
+                        {
+                            Connect-PnPOnline -Url $Url -ClientId $ClientId -Tenant $Tenant -CertificatePath $CertificatePath -ReturnConnection
+                        }
+                    }
+                    else
+                    {
+                        throw "AuthMode 'Certificate' requires either -CertificateThumbprint or -CertificatePath."
+                    }
+                }
+                default
+                {
+                    Connect-PnPOnline -Url $Url -ClientId $ClientId -Interactive -ReturnConnection
+                }
+            }
         }
     }
 
@@ -886,7 +955,7 @@ begin
         }
     }
 
-    Write-LogLine -Message "BEGIN Script: User=$RunUserName, InputFile=$($InputFile.FullName), MySiteHostUrl=$MySiteHostUrl, SharePointOnlineAdminUrl=$SharePointOnlineAdminUrl, AllowUnknownRole=$AllowUnknownRole, TargetLibraryTitle=$TargetLibraryTitle, AutoDiscoverDefaultLibrary=$AutoDiscoverDefaultLibrary"
+    Write-LogLine -Message "BEGIN Script: User=$RunUserName, InputFile=$($InputFile.FullName), MySiteHostUrl=$MySiteHostUrl, SharePointOnlineAdminUrl=$SharePointOnlineAdminUrl, AuthMode=$AuthMode, AllowUnknownRole=$AllowUnknownRole, TargetLibraryTitle=$TargetLibraryTitle, AutoDiscoverDefaultLibrary=$AutoDiscoverDefaultLibrary"
 }
 
 process
