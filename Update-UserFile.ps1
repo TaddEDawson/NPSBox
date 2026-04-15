@@ -83,10 +83,10 @@ param
     [string] $AuthMode = 'Interactive'
     ,
     [Parameter()]
-    [string] $TenantId
+    [string] $TenantId = "92075952-90f3-4613-833b-d2e19ec649e4"
     ,
     [Parameter()]
-    [string] $ClientId
+    [string] $ClientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
     ,
     [Parameter()]
     [string] $CertificateThumbprint
