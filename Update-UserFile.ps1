@@ -13,6 +13,7 @@
     - Grants permissions via POST /invite
     - Silently grants access (sendInvitation = $false)
     - Supports -WhatIf/-Confirm (ShouldProcess)
+    - Retries transient Graph timeouts/throttling with exponential backoff
     - Outputs a structured object per CSV row
 
 .PARAMETER InputFile
@@ -127,7 +128,16 @@ begin
         {
             try
             {
-                Add-Content -LiteralPath $script:LogFilePath -Value $line -ErrorAction Stop
+                $previousWhatIfPreference = $WhatIfPreference
+                try
+                {
+                    $WhatIfPreference = $false
+                    Add-Content -LiteralPath $script:LogFilePath -Value $line -ErrorAction Stop
+                }
+                finally
+                {
+                    $WhatIfPreference = $previousWhatIfPreference
+                }
             }
             catch
             {
@@ -161,7 +171,7 @@ begin
             }
 
             Write-Verbose ("Importing module {0} ({1})" -f $moduleName, $availableModule.Version)
-            Import-Module -Name $moduleName -RequiredVersion $availableModule.Version -ErrorAction Stop | Out-Null
+            Import-Module -Name $moduleName -RequiredVersion $availableModule.Version -ErrorAction Stop -Verbose:$false | Out-Null
         }
     }
 
@@ -187,49 +197,192 @@ begin
         }
     }
 
+    function ConvertTo-OneDriveRelativePath
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $Path
+        )
+
+        $normalized = $Path.Trim()
+        if ([string]::IsNullOrWhiteSpace($normalized))
+        {
+            throw "Row Path is empty."
+        }
+
+        $normalized = $normalized -replace '\\', '/'
+        $normalized = $normalized.Trim('/')
+
+        # Box exports often include a display-only root label.
+        if ($normalized -match '^(?i)all files(?:/|$)')
+        {
+            $normalized = $normalized -replace '^(?i)all files(?:/|$)', ''
+            $normalized = $normalized.Trim('/')
+        }
+
+        if ([string]::IsNullOrWhiteSpace($normalized))
+        {
+            throw ("Row Path '{0}' resolves to empty OneDrive-relative path." -f $Path)
+        }
+
+        return $normalized
+    }
+
+    function ConvertTo-GraphEncodedPath
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $RelativePath
+        )
+
+        $encodedSegments = foreach ($segment in ($RelativePath -split '/'))
+        {
+            if ([string]::IsNullOrWhiteSpace($segment))
+            {
+                continue
+            }
+
+            [System.Uri]::EscapeDataString($segment)
+        }
+
+        if ($null -eq $encodedSegments -or $encodedSegments.Count -eq 0)
+        {
+            throw ("Could not encode OneDrive-relative path: '{0}'" -f $RelativePath)
+        }
+
+        return ($encodedSegments -join '/')
+    }
+
+    function Test-IsRetryableGraphError
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [System.Management.Automation.ErrorRecord] $ErrorRecord
+        )
+
+        $message = [string] $ErrorRecord.Exception.Message
+        $details = [string] $ErrorRecord.ErrorDetails.Message
+        $combined = ($message + " " + $details).ToLowerInvariant()
+
+        # Retry only transient/transport/throttle/server conditions.
+        return (
+            $combined -match 'timeout|timed out|httpclient\.timeout|request was canceled|temporar|try again|throttl|too many requests|\b429\b|\b500\b|\b502\b|\b503\b|\b504\b|serviceunavailable|gatewaytimeout'
+        )
+    }
+
+    function Invoke-WithGraphRetry
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [scriptblock] $Operation
+            ,
+            [Parameter(Mandatory = $true)]
+            [string] $OperationName
+            ,
+            [Parameter()]
+            [ValidateRange(1, 10)]
+            [int] $MaxAttempts = 4
+            ,
+            [Parameter()]
+            [ValidateRange(1, 60)]
+            [int] $InitialDelaySeconds = 2
+            ,
+            [Parameter()]
+            [ValidateRange(1, 120)]
+            [int] $MaxDelaySeconds = 20
+        )
+
+        $attempt = 1
+        $delaySeconds = $InitialDelaySeconds
+
+        while ($true)
+        {
+            try
+            {
+                return (& $Operation)
+            }
+            catch
+            {
+                $isRetryable = Test-IsRetryableGraphError -ErrorRecord $_
+                if ((-not $isRetryable) -or $attempt -ge $MaxAttempts)
+                {
+                    throw
+                }
+
+                Write-LogLine -Level 'WARN' -Message (
+                    "Transient Graph failure during '{0}' (attempt {1}/{2}): {3}. Retrying in {4}s." -f
+                    $OperationName, $attempt, $MaxAttempts, $_.Exception.Message, $delaySeconds
+                )
+
+                Start-Sleep -Seconds $delaySeconds
+                $attempt += 1
+                $delaySeconds = [Math]::Min($delaySeconds * 2, $MaxDelaySeconds)
+            }
+        }
+    }
+
     function Connect-Graph
     {
         [CmdletBinding()]
         param()
 
-        if ($AuthMode -eq 'Interactive')
+        $previousWhatIfPreference = $WhatIfPreference
+        try
         {
-            Write-LogLine -Message ("Connecting to Microsoft Graph using Interactive auth with scopes: {0}" -f ($Scopes -join ', '))
-            Connect-MgGraph -Scopes $Scopes -ErrorAction Stop | Out-Null
-            return
-        }
+            # Always perform authentication even when script is invoked with -WhatIf.
+            $WhatIfPreference = $false
 
-        if ([string]::IsNullOrWhiteSpace($TenantId))
-        {
-            throw "AuthMode 'Certificate' requires -TenantId."
-        }
+            if ($AuthMode -eq 'Interactive')
+            {
+                Write-LogLine -Message ("Connecting to Microsoft Graph using Interactive auth with scopes: {0}" -f ($Scopes -join ', '))
+                Connect-MgGraph -Scopes $Scopes -ErrorAction Stop -NoWelcome | Out-Null
+                return
+            }
 
-        if ([string]::IsNullOrWhiteSpace($ClientId))
-        {
-            throw "AuthMode 'Certificate' requires -ClientId."
-        }
+            if ([string]::IsNullOrWhiteSpace($TenantId))
+            {
+                throw "AuthMode 'Certificate' requires -TenantId."
+            }
 
-        if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint))
-        {
-            Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate thumbprint auth. TenantId={0}, ClientId={1}" -f $TenantId, $ClientId)
-            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -ErrorAction Stop | Out-Null
-            return
-        }
+            if ([string]::IsNullOrWhiteSpace($ClientId))
+            {
+                throw "AuthMode 'Certificate' requires -ClientId."
+            }
 
-        if ([string]::IsNullOrWhiteSpace($CertificatePath))
-        {
-            throw "AuthMode 'Certificate' requires -CertificateThumbprint or -CertificatePath."
-        }
+            if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint))
+            {
+                Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate thumbprint auth. TenantId={0}, ClientId={1}" -f $TenantId, $ClientId)
+                Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -ErrorAction Stop -NoWelcome | Out-Null
+                return
+            }
 
-        Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate path auth. TenantId={0}, ClientId={1}, CertificatePath={2}" -f $TenantId, $ClientId, $CertificatePath)
+            if ([string]::IsNullOrWhiteSpace($CertificatePath))
+            {
+                throw "AuthMode 'Certificate' requires -CertificateThumbprint or -CertificatePath."
+            }
 
-        if ($null -ne $CertificatePassword)
-        {
-            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificatePath $CertificatePath -CertificatePassword $CertificatePassword -ErrorAction Stop | Out-Null
+            Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate path auth. TenantId={0}, ClientId={1}, CertificatePath={2}" -f $TenantId, $ClientId, $CertificatePath)
+
+            if ($null -ne $CertificatePassword)
+            {
+                Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificatePath $CertificatePath -CertificatePassword $CertificatePassword -ErrorAction Stop -NoWelcome | Out-Null
+            }
+            else
+            {
+                Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificatePath $CertificatePath -ErrorAction Stop -NoWelcome | Out-Null
+            }
         }
-        else
+        finally
         {
-            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificatePath $CertificatePath -ErrorAction Stop | Out-Null
+            $WhatIfPreference = $previousWhatIfPreference
         }
     }
 
@@ -274,7 +427,9 @@ begin
         )
 
         Write-LogLine -Message ("Resolving OneDrive drive for owner: {0}" -f $UserPrincipalName)
-        $userDrive = Get-MgUserDrive -UserId $UserPrincipalName -ErrorAction Stop
+        $userDrive = Invoke-WithGraphRetry -OperationName ("Get-MgUserDrive for '{0}'" -f $UserPrincipalName) -Operation {
+            Get-MgUserDrive -UserId $UserPrincipalName -ErrorAction Stop
+        }
 
         if ($null -eq $userDrive -or [string]::IsNullOrWhiteSpace([string] $userDrive.Id))
         {
@@ -303,7 +458,9 @@ begin
         }
 
         $rootCheckUri = "https://graph.microsoft.com/v1.0/drives/$($userDrive.Id)/root?`$select=id,webUrl"
-        $driveRoot = Invoke-MgGraphRequest -Method GET -Uri $rootCheckUri -ErrorAction Stop
+        $driveRoot = Invoke-WithGraphRetry -OperationName ("Resolve drive root for '{0}'" -f $UserPrincipalName) -Operation {
+            Invoke-MgGraphRequest -Method GET -Uri $rootCheckUri -ErrorAction Stop
+        }
         if ($null -eq $driveRoot -or [string]::IsNullOrWhiteSpace([string] $driveRoot.id))
         {
             throw (
@@ -385,6 +542,7 @@ process
             OwnerLogin             = $ownerUpn
             ItemName               = $itemName
             Path                   = $itemPath
+            NormalizedPath         = $null
             CollaboratorLogin      = $collab
             CollaboratorPermission = $boxPerm
             GraphRole              = $graphRole
@@ -398,11 +556,6 @@ process
         }
         try
         {
-            if ([string]::IsNullOrWhiteSpace($itemPath))
-            {
-                throw "Row Path is empty."
-            }
-
             if ([string]::IsNullOrWhiteSpace($collab))
             {
                 throw "Collaborator Login is empty."
@@ -417,11 +570,22 @@ process
                 continue
             }
 
-            $encodedPath = $itemPath.TrimStart('/')
+            $normalizedPath = ConvertTo-OneDriveRelativePath -Path $itemPath
+            $result.NormalizedPath = $normalizedPath
+
+            if (-not [string]::IsNullOrWhiteSpace([string] $drive.WebUrl))
+            {
+                Write-LogLine -Message ("Resolving drive item at: {0}/{1}" -f $drive.WebUrl.TrimEnd('/'), $normalizedPath)
+            }
+
+            $encodedPath = ConvertTo-GraphEncodedPath -RelativePath $normalizedPath
             $getItemUri = "https://graph.microsoft.com/v1.0/drives/$($drive.Id)/root:/$encodedPath"
-            $driveItem = Invoke-MgGraphRequest -Method GET -Uri $getItemUri -ErrorAction Stop
+            $driveItem = Invoke-WithGraphRetry -OperationName ("Resolve drive item '{0}'" -f $normalizedPath) -Operation {
+                Invoke-MgGraphRequest -Method GET -Uri $getItemUri -ErrorAction Stop
+            }
 
             $result.DriveItemId = $driveItem.id
+            $result.ExistsInOneDrive = $true
 
             $target = "DriveItemId=$($driveItem.id) Path='$itemPath' -> grant '$collab' Role='$graphRole'"
             if ($PSCmdlet.ShouldProcess($target, "Invite collaborator via Microsoft Graph (silent grant)"))
@@ -452,6 +616,12 @@ process
         {
             $result.Status = 'Failed'
             $result.Error  = $_.Exception.Message
+
+            if ([object]::ReferenceEquals($result.ExistsInOneDrive, $null) -and $result.Error -match '404|itemNotFound|not found')
+            {
+                $result.ExistsInOneDrive = $false
+            }
+
             Write-LogLine -Level 'ERROR' -Message ("Failed row: Item='{0}', Path='{1}', Collaborator='{2}'. Error={3}" -f $itemName, $itemPath, $collab, $result.Error)
         } # catch
 
