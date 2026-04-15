@@ -264,6 +264,57 @@ begin
         }
     }
 
+    function Get-ValidatedUserDrive
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $UserPrincipalName
+        )
+
+        Write-LogLine -Message ("Resolving OneDrive drive for owner: {0}" -f $UserPrincipalName)
+        $userDrive = Get-MgUserDrive -UserId $UserPrincipalName -ErrorAction Stop
+
+        if ($null -eq $userDrive -or [string]::IsNullOrWhiteSpace([string] $userDrive.Id))
+        {
+            throw ("No OneDrive drive was returned for user '{0}'." -f $UserPrincipalName)
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string] $userDrive.WebUrl))
+        {
+            throw (
+                "OneDrive WebUrl is empty for user '{0}'. The OneDrive site may not be provisioned yet." -f $UserPrincipalName
+            )
+        }
+
+        $parsedOneDriveUrl = $null
+        $isValidWebUrl = [System.Uri]::TryCreate(
+            [string] $userDrive.WebUrl,
+            [System.UriKind]::Absolute,
+            [ref] $parsedOneDriveUrl
+        )
+
+        if (-not $isValidWebUrl)
+        {
+            throw (
+                "OneDrive WebUrl is not a valid absolute URL for user '{0}': {1}" -f $UserPrincipalName, $userDrive.WebUrl
+            )
+        }
+
+        $rootCheckUri = "https://graph.microsoft.com/v1.0/drives/$($userDrive.Id)/root?`$select=id,webUrl"
+        $driveRoot = Invoke-MgGraphRequest -Method GET -Uri $rootCheckUri -ErrorAction Stop
+        if ($null -eq $driveRoot -or [string]::IsNullOrWhiteSpace([string] $driveRoot.id))
+        {
+            throw (
+                "Could not resolve OneDrive root item for user '{0}' (DriveId={1})." -f $UserPrincipalName, $userDrive.Id
+            )
+        }
+
+        Write-LogLine -Message ("Verified OneDrive WebUrl for '{0}': {1}" -f $UserPrincipalName, $userDrive.WebUrl)
+        return $userDrive
+    }
+
     $script:LogFilePath = $null
     try
     {
@@ -305,14 +356,21 @@ process
         return
     }
 
-    $ownerUpn = ($rows | Select-Object -First 1).'Owner Login'
+    if (-not [string]::IsNullOrWhiteSpace($UserToProcess))
+    {
+        $ownerUpn = $UserToProcess
+    }
+    else
+    {
+        $ownerUpn = ($rows | Select-Object -First 1).'Owner Login'
+    }
+
     if ([string]::IsNullOrWhiteSpace($ownerUpn))
     {
         throw "Owner Login is empty in the CSV."
     }
 
-    Write-LogLine -Message ("Resolving OneDrive drive for owner: {0}" -f $ownerUpn)
-    $drive = Get-MgUserDrive -UserId $ownerUpn -ErrorAction Stop
+    $drive = Get-ValidatedUserDrive -UserPrincipalName $ownerUpn
 
     foreach ($row in $rows)
     {
@@ -331,6 +389,7 @@ process
             CollaboratorPermission = $boxPerm
             GraphRole              = $graphRole
             DriveId                = $drive.Id
+            OneDriveWebUrl         = $drive.WebUrl
             ExistsInOneDrive       = $null
             DriveItemId            = $null
             Action                 = $null
