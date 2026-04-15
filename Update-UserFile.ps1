@@ -1,5 +1,4 @@
 #Requires -Version 7.0
-#Requires -Modules Microsoft.Graph.Authentication,Microsoft.Graph.Users,Microsoft.Graph.Files
 
 <#
 .SYNOPSIS
@@ -76,7 +75,7 @@ param
     ,
     [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
     [Alias('Owner Login', 'User', 'UPN', 'Account')]
-    [string] $UserToProcess
+    [string] $UserToProcess = "AdilE@M365CPI19595461.OnMicrosoft.com"
     ,
     [Parameter()]
     [ValidateSet('Interactive', 'Certificate')]
@@ -99,7 +98,6 @@ param
     ,
     [Parameter()]
     [string[]] $Scopes = @(
-        'User.Read.All',
         'Files.ReadWrite.All'
     )
     ,
@@ -135,6 +133,35 @@ begin
             {
                 Write-Warning "Failed to write log line: $($_.Exception.Message)"
             } # catch
+        }
+    }
+
+    function Assert-RequiredModules
+    {
+        [CmdletBinding()]
+        param()
+
+        $requiredModules = @(
+            'Microsoft.Graph.Authentication',
+            'Microsoft.Graph.Users',
+            'Microsoft.Graph.Files'
+        )
+
+        foreach ($moduleName in $requiredModules)
+        {
+            $availableModule = Get-Module -ListAvailable -Name $moduleName |
+                Sort-Object -Property Version -Descending |
+                Select-Object -First 1
+
+            if ($null -eq $availableModule)
+            {
+                throw (
+                    "Required module not found: $moduleName. Install it with: Install-Module $moduleName -Scope CurrentUser"
+                )
+            }
+
+            Write-Verbose ("Importing module {0} ({1})" -f $moduleName, $availableModule.Version)
+            Import-Module -Name $moduleName -RequiredVersion $availableModule.Version -ErrorAction Stop | Out-Null
         }
     }
 
@@ -254,6 +281,7 @@ begin
     } # catch
 
     Assert-GraphAssemblyCompatibility
+    Assert-RequiredModules
     Connect-Graph
 } # begin
 
@@ -283,11 +311,8 @@ process
         throw "Owner Login is empty in the CSV."
     }
 
-    Write-LogLine -Message ("Resolving owner user: {0}" -f $ownerUpn)
-    $ownerUser = Get-MgUser -UserId $ownerUpn -ErrorAction Stop
-
-    Write-LogLine -Message ("Resolving OneDrive drive for userId: {0}" -f $ownerUser.Id)
-    $drive = Get-MgUserDrive -UserId $ownerUser.Id -ErrorAction Stop
+    Write-LogLine -Message ("Resolving OneDrive drive for owner: {0}" -f $ownerUpn)
+    $drive = Get-MgUserDrive -UserId $ownerUpn -ErrorAction Stop
 
     foreach ($row in $rows)
     {
@@ -306,12 +331,12 @@ process
             CollaboratorPermission = $boxPerm
             GraphRole              = $graphRole
             DriveId                = $drive.Id
+            ExistsInOneDrive       = $null
             DriveItemId            = $null
             Action                 = $null
             Status                 = 'Unknown'
             Error                  = $null
         }
-
         try
         {
             if ([string]::IsNullOrWhiteSpace($itemPath))
