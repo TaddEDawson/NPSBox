@@ -1,0 +1,3 @@
+2026-04-14T22:00:55.294-04:00 [INFO] Resolving OneDrive drive for owner: AdilE@M365CPI19595461.OnMicrosoft.com
+2026-04-14T22:05:56.503-04:00 [WARN] Transient Graph failure during 'Get-MgUserDrive for 'AdilE@M365CPI19595461.OnMicrosoft.com'' (attempt 1/4): The request was canceled due to the configured HttpClient.Timeout of 300 seconds elapsing.. Retrying in 2s.
+2026-04-14T22:10:58.644-04:00 [WARN] Transient Graph failure during 'Get-MgUserDrive for 'AdilE@M365CPI19595461.OnMicrosoft.com'' (attempt 2/4): The request was canceled due to the configured HttpClient.Timeout of 300 seconds elapsing.. Retrying in 4s.
