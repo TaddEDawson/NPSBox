@@ -25,19 +25,24 @@ Describe 'Update-UserFile.ps1' {
         $script:DefaultDriveId = 'b!-kIQeRjLDEyVXvh98xyWkBx6vWyJBJhFr5H_U3K6v7bkHqmOKs-hRpYN8L-rk6HJ'
         $script:DefaultWebUrl = 'https://contoso-my.sharepoint.com/personal/user_contoso_onmicrosoft_com'
 
-        # Create stubs for functions that will be mocked, so sourcing the script doesn't fail
+        # Create stubs for script-internal functions that will be mocked.
+        # These do not exist until the script is dot-sourced, but Pester needs
+        # them resolvable before Mock is called.  Using explicit function
+        # declarations at the current scope ensures Pester can find them.
+        function Assert-RequiredModules { }
+        function Connect-Graph { }
+        function Assert-GraphAssemblyCompatibility { }
+        function Get-ValidatedUserDrive { }
+
+        # Module cmdlets — only stub if not already available from the installed module.
         foreach ($cmdletName in @(
-            'Assert-RequiredModules',
-            'Connect-Graph',
-            'Assert-GraphAssemblyCompatibility',
-            'Get-ValidatedUserDrive',
             'Disconnect-MgGraph',
             'Connect-MgGraph',
             'Get-MgUserDrive',
             'Invoke-MgGraphRequest'
         ))
         {
-            if (-not (Get-Command -Name $cmdletName -CommandType Function -ErrorAction SilentlyContinue))
+            if (-not (Get-Command -Name $cmdletName -ErrorAction SilentlyContinue))
             {
                 New-Item -Path "Function:\$cmdletName" -Value {} -Force | Out-Null
             }
