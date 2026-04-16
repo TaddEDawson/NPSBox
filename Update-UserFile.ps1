@@ -745,15 +745,35 @@ process
                     recipients      = @(@{ email = $collab })
                     roles           = @($graphRole)     # read | write
                     requireSignIn   = $true
-                    sendInvitation  = $false            # silent grant
-                    message         = "Access granted via permissions synchronization."
+                    sendInvitation  = $false            # silent grant — no email sent
                 } | ConvertTo-Json -Depth 6
 
-                Invoke-MgGraphRequest -Method POST -Uri $inviteUri -Body $body -ContentType 'application/json' -ErrorAction Stop | Out-Null
+                $inviteResponse = Invoke-WithGraphRetry -OperationName ("Invite '{0}' on '{1}'" -f $collab, $normalizedPath) -Operation {
+                    Invoke-MgGraphRequest -Method POST -Uri $inviteUri -Body $body -ContentType 'application/json' -ErrorAction Stop
+                }
+
+                # Validate the response to confirm the permission was actually granted.
+                $grantedPermissions = $inviteResponse.value
+                if ($null -eq $grantedPermissions -or $grantedPermissions.Count -eq 0)
+                {
+                    throw ("Invite API returned no permissions for collaborator '{0}' on item '{1}'." -f $collab, $normalizedPath)
+                }
+
+                $grantedEntry = $grantedPermissions | Select-Object -First 1
+                $grantedRoles = $grantedEntry.roles -join ', '
+
+                # Check for per-recipient errors (207 partial success).
+                if ($null -ne $grantedEntry.error)
+                {
+                    $errCode = $grantedEntry.error.code
+                    $errMsg  = $grantedEntry.error.message
+                    throw ("Invite failed for '{0}': [{1}] {2}" -f $collab, $errCode, $errMsg)
+                }
 
                 $result.Action = 'Invited'
                 $result.Status = 'Applied'
-                Write-LogLine -Message ("Granted '{0}' as '{1}' to '{2}' (silent)" -f $collab, $graphRole, $itemPath)
+                Write-LogLine -Message ("Granted '{0}' roles=[{1}] on '{2}' (PermissionId={3}, sendInvitation=false)" -f
+                    $collab, $grantedRoles, $itemPath, $grantedEntry.id)
             }
             else
             {

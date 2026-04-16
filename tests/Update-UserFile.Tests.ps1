@@ -207,7 +207,10 @@ Describe 'Update-UserFile.ps1' {
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
-                if ($Uri -match '/root') {
+                if ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
                     return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
                 }
                 return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
@@ -279,7 +282,10 @@ Describe 'Update-UserFile.ps1' {
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
-                if ($Uri -match '/root') {
+                if ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
                     return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
                 }
                 return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
@@ -423,14 +429,14 @@ Describe 'Update-UserFile.ps1' {
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri, $Body)
-                if ($Uri -match '/root') {
+                if ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
                     return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
                 }
                 elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
                     return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
-                }
-                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
-                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id' }) }
                 }
             }
         }
@@ -497,7 +503,10 @@ Describe 'Update-UserFile.ps1' {
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
-                if ($Uri -match '/root') {
+                if ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
                     return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
                 }
                 return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
