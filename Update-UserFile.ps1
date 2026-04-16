@@ -340,6 +340,15 @@ begin
             # Always perform authentication even when script is invoked with -WhatIf.
             $WhatIfPreference = $false
 
+            # Check for an existing Graph context and reuse it if the TenantId matches.
+            $existingContext = Get-MgContext -ErrorAction SilentlyContinue
+            if ($null -ne $existingContext -and $existingContext.TenantId -eq $TenantId)
+            {
+                Write-LogLine -Message ("Reusing existing Microsoft Graph context. TenantId={0}, AppName={1}, AuthType={2}" -f
+                    $existingContext.TenantId, $existingContext.AppName, $existingContext.AuthType)
+                return
+            }
+
             if ([string]::IsNullOrWhiteSpace($TenantId))
             {
                 throw "AuthMode '$AuthMode' requires -TenantId."
