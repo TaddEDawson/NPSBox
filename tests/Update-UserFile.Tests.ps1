@@ -33,13 +33,15 @@ Describe 'Update-UserFile.ps1' {
         function Connect-Graph { }
         function Assert-GraphAssemblyCompatibility { }
         function Get-ValidatedUserDrive { }
+        function Invoke-OneDriveUpload { }
 
         # Module cmdlets — only stub if not already available from the installed module.
         foreach ($cmdletName in @(
             'Disconnect-MgGraph',
             'Connect-MgGraph',
             'Get-MgUserDrive',
-            'Invoke-MgGraphRequest'
+            'Invoke-MgGraphRequest',
+            'Get-MgContext'
         ))
         {
             if (-not (Get-Command -Name $cmdletName -ErrorAction SilentlyContinue))
@@ -463,6 +465,115 @@ Describe 'Update-UserFile.ps1' {
             } 6>&1
 
             Assert-MockCalled -CommandName 'Disconnect-MgGraph' -Scope It
+        }
+    }
+
+    Context 'Script Execution - UploadFiles Switch' {
+        BeforeEach {
+            # Create a minimal CSV (required by the script even when uploading)
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_upload.csv'
+            $rows = @(
+                (New-CsvRow -ItemName 'Doc1.txt' -CollaboratorPermission 'Editor')
+            )
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_upload'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            # Create a fake local file structure mirroring the user's files
+            $script:LocalFilesRoot = Join-Path -Path $TestDrive -ChildPath 'LocalFiles'
+            $script:UserLocalPath = Join-Path -Path $script:LocalFilesRoot -ChildPath $script:DefaultOwner
+            $subFolder = Join-Path -Path $script:UserLocalPath -ChildPath 'TestFolder'
+            New-Item -Path $subFolder -ItemType Directory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path -Path $script:UserLocalPath -ChildPath 'RootFile.txt') -Value 'root content'
+            Set-Content -LiteralPath (Join-Path -Path $subFolder -ChildPath 'SubFile.txt') -Value 'sub content'
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/root') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
+            }
+        }
+
+        It 'should upload files and create folders' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -Verbose:$false
+            } 6>&1
+
+            $uploadResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -in @('CreateFolder', 'UploadFile') }
+            $uploadResults | Should -Not -BeNullOrEmpty
+
+            $folderResults = $uploadResults | Where-Object { $_.Action -eq 'CreateFolder' }
+            $folderResults | Should -Not -BeNullOrEmpty
+            $folderResults[0].ItemType | Should -Be 'Folder'
+            $folderResults[0].Status | Should -Be 'Applied'
+
+            $fileResults = $uploadResults | Where-Object { $_.Action -eq 'UploadFile' }
+            $fileResults.Count | Should -Be 2
+            $fileResults | ForEach-Object { $_.Status | Should -Be 'Applied' }
+        }
+
+        It 'should list files that would be uploaded with -WhatIf' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -WhatIf -Verbose:$false
+            } 6>&1
+
+            $uploadResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -in @('CreateFolder', 'UploadFile') }
+            $uploadResults | Should -Not -BeNullOrEmpty
+            $uploadResults | ForEach-Object { $_.Status | Should -Be 'WhatIf' }
+        }
+
+        It 'should output upload result objects with expected properties' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -Verbose:$false
+            } 6>&1
+
+            $fileResult = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' } | Select-Object -First 1
+            $fileResult.PSObject.Properties.Name | Should -Contain 'OwnerLogin'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'LocalPath'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'OneDrivePath'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'ItemType'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'SizeBytes'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'Action'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'Status'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'Error'
+        }
+
+        It 'should throw when user local folder does not exist' {
+            $emptyRoot = Join-Path -Path $TestDrive -ChildPath 'EmptyLocalFiles'
+            New-Item -Path $emptyRoot -ItemType Directory -Force | Out-Null
+
+            { & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $emptyRoot -UploadFiles -Verbose:$false
+            } } | Should -Throw '*not found*'
+        }
+
+        It 'should not upload when UploadFiles is not specified' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $script:LocalFilesRoot -Verbose:$false
+            } 6>&1
+
+            $uploadResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -in @('CreateFolder', 'UploadFile') }
+            $uploadResults | Should -BeNullOrEmpty
         }
     }
 }

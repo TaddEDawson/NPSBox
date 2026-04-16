@@ -53,12 +53,25 @@
 .PARAMETER LogFolder
     Folder where a run log is written.
 
+.PARAMETER AllFilesDirectory
+    Root directory containing per-user subfolders of local files.
+    Each subfolder is named by the user's UPN (e.g. user@contoso.com).
+    Used with -UploadFiles.
+
+.PARAMETER UploadFiles
+    When present, uploads files and folders from AllFilesDirectory\<UserToProcess>
+    to the user's OneDrive root. Supports -WhatIf to list what would be uploaded.
+
 .EXAMPLE
     .\Update-UserFile.ps1 -InputFile .\Box.csv -UserToProcess user@contoso.com -AuthMode Interactive -Verbose -WhatIf
 
 .EXAMPLE
     .\Update-UserFile.ps1 -InputFile .\Box.csv -UserToProcess user@contoso.com -AuthMode Certificate `
       -TenantId <tenant-guid> -ClientId <app-guid> -CertificateThumbprint <thumbprint> -Verbose
+
+.EXAMPLE
+    .\Update-UserFile.ps1 -UserToProcess user@contoso.com -UploadFiles -AuthMode Certificate `
+      -TenantId <tenant-guid> -ClientId <app-guid> -CertificateThumbprint <thumbprint> -Verbose -WhatIf
 
 .NOTES
     Docs:
@@ -104,6 +117,12 @@ param
     ,
     [Parameter()]
     [string] $LogFolder = "C:\Repos\NPSBox\Logs"
+    ,
+    [Parameter()]
+    [string] $AllFilesDirectory = "C:\Repos\NPSBox\LocalFiles"
+    ,
+    [Parameter()]
+    [switch] $UploadFiles
 )
 
 begin
@@ -395,6 +414,119 @@ begin
         }
     }
 
+    function Invoke-OneDriveUpload
+    {
+        [CmdletBinding(SupportsShouldProcess = $true)]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $DriveId
+            ,
+            [Parameter(Mandatory = $true)]
+            [string] $LocalSourcePath
+            ,
+            [Parameter(Mandatory = $true)]
+            [string] $OwnerUpn
+        )
+
+        if (-not (Test-Path -LiteralPath $LocalSourcePath))
+        {
+            throw ("Local source path not found: '{0}'" -f $LocalSourcePath)
+        }
+
+        $allItems = Get-ChildItem -LiteralPath $LocalSourcePath -Recurse -Force
+        $baseLength = $LocalSourcePath.TrimEnd('\', '/').Length + 1
+
+        # Process folders first (sorted by depth) to ensure parents exist before children.
+        $folders = $allItems | Where-Object { $_.PSIsContainer } | Sort-Object { $_.FullName.Length }
+        foreach ($folder in $folders)
+        {
+            $relativePath = $folder.FullName.Substring($baseLength) -replace '\\', '/'
+            $encodedRelPath = ConvertTo-GraphEncodedPath -RelativePath $relativePath
+            $folderUri = "https://graph.microsoft.com/v1.0/drives/$DriveId/root:/$encodedRelPath"
+
+            $result = [pscustomobject]@{
+                OwnerLogin   = $OwnerUpn
+                LocalPath    = $folder.FullName
+                OneDrivePath = $relativePath
+                ItemType     = 'Folder'
+                Action       = 'CreateFolder'
+                Status       = 'Unknown'
+                Error        = $null
+            }
+
+            try
+            {
+                if ($PSCmdlet.ShouldProcess("OneDrive:/$relativePath", "Create folder"))
+                {
+                    $body = @{ folder = @{}; '@microsoft.graph.conflictBehavior' = 'replace' } | ConvertTo-Json -Depth 4
+                    Invoke-WithGraphRetry -OperationName ("Create folder '{0}'" -f $relativePath) -Operation {
+                        Invoke-MgGraphRequest -Method PATCH -Uri $folderUri -Body $body -ContentType 'application/json' -ErrorAction Stop | Out-Null
+                    }
+                    $result.Status = 'Applied'
+                    Write-LogLine -Message ("Created folder: OneDrive:/{0}" -f $relativePath)
+                }
+                else
+                {
+                    $result.Status = 'WhatIf'
+                }
+            }
+            catch
+            {
+                $result.Status = 'Failed'
+                $result.Error  = $_.Exception.Message
+                Write-LogLine -Level 'ERROR' -Message ("Failed to create folder '{0}': {1}" -f $relativePath, $result.Error)
+            } # catch
+
+            $result
+        }
+
+        # Process files.
+        $files = $allItems | Where-Object { -not $_.PSIsContainer }
+        foreach ($file in $files)
+        {
+            $relativePath = $file.FullName.Substring($baseLength) -replace '\\', '/'
+            $encodedRelPath = ConvertTo-GraphEncodedPath -RelativePath $relativePath
+            $uploadUri = "https://graph.microsoft.com/v1.0/drives/$DriveId/root:/${encodedRelPath}:/content"
+
+            $result = [pscustomobject]@{
+                OwnerLogin   = $OwnerUpn
+                LocalPath    = $file.FullName
+                OneDrivePath = $relativePath
+                ItemType     = 'File'
+                SizeBytes    = $file.Length
+                Action       = 'UploadFile'
+                Status       = 'Unknown'
+                Error        = $null
+            }
+
+            try
+            {
+                if ($PSCmdlet.ShouldProcess("OneDrive:/$relativePath ($($file.Length) bytes)", "Upload file"))
+                {
+                    $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                    Invoke-WithGraphRetry -OperationName ("Upload file '{0}'" -f $relativePath) -Operation {
+                        Invoke-MgGraphRequest -Method PUT -Uri $uploadUri -Body $fileBytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
+                    }
+                    $result.Status = 'Applied'
+                    Write-LogLine -Message ("Uploaded file: OneDrive:/{0} ({1} bytes)" -f $relativePath, $file.Length)
+                }
+                else
+                {
+                    $result.Status = 'WhatIf'
+                }
+            }
+            catch
+            {
+                $result.Status = 'Failed'
+                $result.Error  = $_.Exception.Message
+                Write-LogLine -Level 'ERROR' -Message ("Failed to upload file '{0}': {1}" -f $relativePath, $result.Error)
+            } # catch
+
+            $result
+        }
+    }
+
     function Assert-GraphAssemblyCompatibility
     {
         [CmdletBinding()]
@@ -537,6 +669,14 @@ process
     }
 
     $drive = Get-ValidatedUserDrive -UserPrincipalName $ownerUpn
+
+    # ── Upload local files if -UploadFiles is specified ──────────────────────
+    if ($UploadFiles)
+    {
+        $userLocalPath = Join-Path -Path $AllFilesDirectory -ChildPath $ownerUpn
+        Write-LogLine -Message ("Uploading local files from '{0}' to OneDrive for '{1}'." -f $userLocalPath, $ownerUpn)
+        Invoke-OneDriveUpload -DriveId $drive.Id -LocalSourcePath $userLocalPath -OwnerUpn $ownerUpn
+    }
 
     foreach ($row in $rows)
     {
