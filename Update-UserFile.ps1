@@ -340,16 +340,16 @@ begin
             # Always perform authentication even when script is invoked with -WhatIf.
             $WhatIfPreference = $false
 
-            if ($AuthMode -eq 'Interactive')
-            {
-                Write-LogLine -Message ("Connecting to Microsoft Graph using Interactive auth with scopes: {0}" -f ($Scopes -join ', '))
-                Connect-MgGraph -Scopes $Scopes -ErrorAction Stop -NoWelcome | Out-Null
-                return
-            }
-
             if ([string]::IsNullOrWhiteSpace($TenantId))
             {
-                throw "AuthMode 'Certificate' requires -TenantId."
+                throw "AuthMode '$AuthMode' requires -TenantId."
+            }
+
+            if ($AuthMode -eq 'Interactive')
+            {
+                Write-LogLine -Message ("Connecting to Microsoft Graph using Interactive auth. TenantId={0}, Scopes={1}" -f $TenantId, ($Scopes -join ', '))
+                Connect-MgGraph -TenantId $TenantId -Scopes $Scopes -ErrorAction Stop -NoWelcome | Out-Null
+                return
             }
 
             if ([string]::IsNullOrWhiteSpace($ClientId))
