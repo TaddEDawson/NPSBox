@@ -287,19 +287,19 @@ begin
                 {
                     $WhatIfPreference = $false
                     Add-Content -LiteralPath $script:LogFilePath -Value $line -ErrorAction Stop
-                }
+                } # try
                 finally
                 {
                     $WhatIfPreference = $previousWhatIfPreference
                 } # finally — always restores the original $WhatIfPreference
-            }
+            } # try
             catch
             {
                 # Write-Warning outputs a non-terminating warning that appears in yellow.
                 Write-Warning "Failed to write log line: $($_.Exception.Message)"
             } # catch
-        }
-    }
+        } # if
+    } # function Write-LogLine
 
     # ── Assert-RequiredModules ───────────────────────────────────────────────────
     # Ensures the Microsoft Graph PowerShell SDK modules are installed and imports them.
@@ -337,15 +337,15 @@ begin
                 throw (
                     "Required module not found: $moduleName. Install it with: Install-Module $moduleName -Scope CurrentUser"
                 )
-            }
+            } # if
 
             Write-Verbose ("Importing module {0} ({1})" -f $moduleName, $availableModule.Version)
             # Import-Module loads the module into the current session so its commands are available.
             # -RequiredVersion ensures we load the exact version we checked.
             # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/import-module
             Import-Module -Name $moduleName -RequiredVersion $availableModule.Version -ErrorAction Stop -Verbose:$false | Out-Null
-        }
-    }
+        } # foreach
+    } # function Assert-RequiredModules
 
     # ── ConvertTo-GraphRole ──────────────────────────────────────────────────────
     # Maps a Box permission name to a Microsoft Graph sharing role.
@@ -376,8 +376,8 @@ begin
             'Previewer'          { return $null   }   # No Graph equivalent — skip
             'Uploader'           { return $null   }   # No Graph equivalent — skip
             default              { return $null   }   # Unknown — skip
-        }
-    }
+        } # switch
+    } # function ConvertTo-GraphRole
 
     # ── ConvertTo-OneDriveRelativePath ────────────────────────────────────────────
     # Cleans up the Box export path so it can be used with the Graph API.
@@ -399,7 +399,7 @@ begin
         if ([string]::IsNullOrWhiteSpace($normalized))
         {
             throw "Row Path is empty."
-        }
+        } # if
 
         # Replace Windows-style backslashes with forward slashes for the Graph API.
         $normalized = $normalized -replace '\\', '/'
@@ -413,15 +413,15 @@ begin
             # The -replace operator substitutes matches with the replacement string.
             $normalized = $normalized -replace '^(?i)all files(?:/|$)', ''
             $normalized = $normalized.Trim('/')
-        }
+        } # if
 
         if ([string]::IsNullOrWhiteSpace($normalized))
         {
             throw ("Row Path '{0}' resolves to empty OneDrive-relative path." -f $Path)
-        }
+        } # if
 
         return $normalized
-    }
+    } # function ConvertTo-OneDriveRelativePath
 
     # ── ConvertTo-GraphEncodedPath ────────────────────────────────────────────────
     # URL-encodes each segment of a relative path so special characters (spaces,
@@ -447,21 +447,21 @@ begin
             if ([string]::IsNullOrWhiteSpace($segment))
             {
                 continue
-            }
+            } # if
 
             # EscapeDataString percent-encodes characters like spaces and parentheses.
             # https://learn.microsoft.com/dotnet/api/system.uri.escapedatastring
             [System.Uri]::EscapeDataString($segment)
-        }
+        } # ?:$encodedSegments = foreach ($segment in ($RelativePath -split '/'))
 
         if ($null -eq $encodedSegments -or $encodedSegments.Count -eq 0)
         {
             throw ("Could not encode OneDrive-relative path: '{0}'" -f $RelativePath)
-        }
+        } # if
 
         # -join '/' reassembles the encoded segments back into a path string.
         return ($encodedSegments -join '/')
-    }
+    } # function ConvertTo-GraphEncodedPath
 
     # ── Test-IsRetryableGraphError ────────────────────────────────────────────────
     # Determines whether a Graph API error is transient and worth retrying.
@@ -490,7 +490,7 @@ begin
         return (
             $combined -match 'timeout|timed out|httpclient\.timeout|request was canceled|temporar|try again|throttl|too many requests|\b429\b|\b500\b|\b502\b|\b503\b|\b504\b|serviceunavailable|gatewaytimeout'
         )
-    }
+    } # function Test-IsRetryableGraphError
 
     # ── Invoke-WithGraphRetry ────────────────────────────────────────────────────
     # Wraps a Graph API call with automatic retry and exponential backoff.
@@ -533,14 +533,14 @@ begin
             try
             {
                 return (& $Operation)
-            }
+            } # try
             catch
             {
                 $isRetryable = Test-IsRetryableGraphError -ErrorRecord $_
                 if ((-not $isRetryable) -or $attempt -ge $MaxAttempts)
                 {
                     throw
-                }
+                } # if
 
                 Write-LogLine -Level 'WARN' -Message (
                     "Transient Graph failure during '{0}' (attempt {1}/{2}): {3}. Retrying in {4}s." -f
@@ -550,9 +550,9 @@ begin
                 Start-Sleep -Seconds $delaySeconds
                 $attempt += 1
                 $delaySeconds = [Math]::Min($delaySeconds * 2, $MaxDelaySeconds)
-            }
-        }
-    }
+            } # catch
+        } # while
+    } # function Invoke-WithGraphRetry
 
     # ── Connect-Graph ────────────────────────────────────────────────────────────
     # Authenticates to Microsoft Graph using the selected AuthMode.
@@ -590,53 +590,53 @@ begin
                 Write-LogLine -Message ("Reusing existing Microsoft Graph context. TenantId={0}, AppName={1}, AuthType={2}" -f
                     $existingContext.TenantId, $existingContext.AppName, $existingContext.AuthType)
                 return
-            }
+            } # if
 
             if ([string]::IsNullOrWhiteSpace($TenantId))
             {
                 throw "AuthMode '$AuthMode' requires -TenantId."
-            }
+            } # if
 
             if ($AuthMode -eq 'Interactive')
             {
                 Write-LogLine -Message ("Connecting to Microsoft Graph using Interactive auth. TenantId={0}, Scopes={1}" -f $TenantId, ($Scopes -join ', '))
                 Connect-MgGraph -TenantId $TenantId -Scopes $Scopes -ErrorAction Stop -NoWelcome | Out-Null
                 return
-            }
+            } # if
 
             if ([string]::IsNullOrWhiteSpace($ClientId))
             {
                 throw "AuthMode 'Certificate' requires -ClientId."
-            }
+            } # if
 
             if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint))
             {
                 Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate thumbprint auth. TenantId={0}, ClientId={1}" -f $TenantId, $ClientId)
                 Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -ErrorAction Stop -NoWelcome | Out-Null
                 return
-            }
+            } # if
 
             if ([string]::IsNullOrWhiteSpace($CertificatePath))
             {
                 throw "AuthMode 'Certificate' requires -CertificateThumbprint or -CertificatePath."
-            }
+            } # if
 
             Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate path auth. TenantId={0}, ClientId={1}, CertificatePath={2}" -f $TenantId, $ClientId, $CertificatePath)
 
             if ($null -ne $CertificatePassword)
             {
                 Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificatePath $CertificatePath -CertificatePassword $CertificatePassword -ErrorAction Stop -NoWelcome | Out-Null
-            }
+            } # if
             else
             {
                 Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificatePath $CertificatePath -ErrorAction Stop -NoWelcome | Out-Null
-            }
-        }
+            } # else
+        } # try
         finally
         {
             $WhatIfPreference = $previousWhatIfPreference
-        }
-    }
+        } # finally
+    } # function Connect-Graph
 
     # ── Invoke-OneDriveUpload ─────────────────────────────────────────────────────
     # Uploads local files and folders to a user's OneDrive.
@@ -671,7 +671,7 @@ begin
         if (-not (Test-Path -LiteralPath $LocalSourcePath))
         {
             throw ("Local source path not found: '{0}'" -f $LocalSourcePath)
-        }
+        } # if
 
         # Get-ChildItem -Recurse lists all files and folders under the path.
         # -Force includes hidden files.
@@ -696,7 +696,7 @@ begin
                 Action       = 'CreateFolder'
                 Status       = 'Unknown'
                 Error        = $null
-            }
+            } # inline:$result = [pscustomobject]@{
 
             try
             {
@@ -705,15 +705,15 @@ begin
                     $body = @{ folder = @{}; '@microsoft.graph.conflictBehavior' = 'replace' } | ConvertTo-Json -Depth 4
                     Invoke-WithGraphRetry -OperationName ("Create folder '{0}'" -f $relativePath) -Operation {
                         Invoke-MgGraphRequest -Method PATCH -Uri $folderUri -Body $body -ContentType 'application/json' -ErrorAction Stop | Out-Null
-                    }
+                    } # inline:Invoke-WithGraphRetry -OperationName ("C
                     $result.Status = 'Applied'
                     Write-LogLine -Message ("Created folder: OneDrive:/{0}" -f $relativePath)
-                }
+                } # if
                 else
                 {
                     $result.Status = 'WhatIf'
-                }
-            }
+                } # else
+            } # try
             catch
             {
                 $result.Status = 'Failed'
@@ -722,7 +722,7 @@ begin
             } # catch
 
             $result
-        }
+        } # foreach
 
         # Process files.
         $files = $allItems | Where-Object { -not $_.PSIsContainer }
@@ -741,7 +741,7 @@ begin
                 Action       = 'UploadFile'
                 Status       = 'Unknown'
                 Error        = $null
-            }
+            } # inline:$result = [pscustomobject]@{
 
             try
             {
@@ -750,15 +750,15 @@ begin
                     $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
                     Invoke-WithGraphRetry -OperationName ("Upload file '{0}'" -f $relativePath) -Operation {
                         Invoke-MgGraphRequest -Method PUT -Uri $uploadUri -Body $fileBytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
-                    }
+                    } # inline:Invoke-WithGraphRetry -OperationName ("U
                     $result.Status = 'Applied'
                     Write-LogLine -Message ("Uploaded file: OneDrive:/{0} ({1} bytes)" -f $relativePath, $file.Length)
-                }
+                } # if
                 else
                 {
                     $result.Status = 'WhatIf'
-                }
-            }
+                } # else
+            } # try
             catch
             {
                 $result.Status = 'Failed'
@@ -767,8 +767,8 @@ begin
             } # catch
 
             $result
-        }
-    }
+        } # foreach
+    } # function Invoke-OneDriveUpload
 
     # ── Assert-GraphAssemblyCompatibility ──────────────────────────────────────────
     # Checks for a known conflict:  PnP.PowerShell loads an older version of
@@ -787,7 +787,7 @@ begin
                 "PnP.PowerShell is loaded in this session and can load Microsoft.Graph.Core 1.x, which conflicts with Microsoft Graph PowerShell SDK v2. " +
                 "Start a new pwsh session (recommended) or run: Remove-Module PnP.PowerShell -Force, then re-run this script."
             )
-        }
+        } # if
 
         $graphCoreAssembly = [AppDomain]::CurrentDomain.GetAssemblies() |
             Where-Object { $_.GetName().Name -eq 'Microsoft.Graph.Core' } |
@@ -802,9 +802,9 @@ begin
                     "Incompatible Microsoft.Graph.Core assembly already loaded in this session: $loadedVersion. " +
                     "This usually happens after importing PnP.PowerShell. Start a new pwsh session and run this script before importing PnP modules."
                 )
-            }
-        }
-    }
+            } # if
+        } # if
+    } # function Assert-GraphAssemblyCompatibility
 
     # ── Get-ValidatedUserDrive ────────────────────────────────────────────────────
     # Looks up a user's OneDrive drive via Microsoft Graph, validates the response,
@@ -828,19 +828,19 @@ begin
         Write-LogLine -Message ("Resolving OneDrive drive for owner: {0}" -f $UserPrincipalName)
         $userDrive = Invoke-WithGraphRetry -OperationName ("Get-MgUserDrive for '{0}'" -f $UserPrincipalName) -Operation {
             Get-MgUserDrive -UserId $UserPrincipalName -ErrorAction Stop
-        }
+        } # inline:$userDrive = Invoke-WithGraphRetry -Oper
 
         if ($null -eq $userDrive -or [string]::IsNullOrWhiteSpace([string] $userDrive.Id))
         {
             throw ("No OneDrive drive was returned for user '{0}'." -f $UserPrincipalName)
-        }
+        } # if
 
         if ([string]::IsNullOrWhiteSpace([string] $userDrive.WebUrl))
         {
             throw (
                 "OneDrive WebUrl is empty for user '{0}'. The OneDrive site may not be provisioned yet." -f $UserPrincipalName
             )
-        }
+        } # if
 
         $parsedOneDriveUrl = $null
         $isValidWebUrl = [System.Uri]::TryCreate(
@@ -854,22 +854,22 @@ begin
             throw (
                 "OneDrive WebUrl is not a valid absolute URL for user '{0}': {1}" -f $UserPrincipalName, $userDrive.WebUrl
             )
-        }
+        } # if
 
         $rootCheckUri = "https://graph.microsoft.com/v1.0/drives/$($userDrive.Id)/root?`$select=id,webUrl"
         $driveRoot = Invoke-WithGraphRetry -OperationName ("Resolve drive root for '{0}'" -f $UserPrincipalName) -Operation {
             Invoke-MgGraphRequest -Method GET -Uri $rootCheckUri -ErrorAction Stop
-        }
+        } # inline:$driveRoot = Invoke-WithGraphRetry -Oper
         if ($null -eq $driveRoot -or [string]::IsNullOrWhiteSpace([string] $driveRoot.id))
         {
             throw (
                 "Could not resolve OneDrive root item for user '{0}' (DriveId={1})." -f $UserPrincipalName, $userDrive.Id
             )
-        }
+        } # if
 
         Write-LogLine -Message ("Verified OneDrive WebUrl for '{0}': {1}" -f $UserPrincipalName, $userDrive.WebUrl)
         return $userDrive
-    }
+    } # function Get-ValidatedUserDrive
 
     # ── Initialization (runs once at script start) ───────────────────────────────
     # Set up logging, check for assembly conflicts, import modules, and authenticate.
@@ -883,12 +883,12 @@ begin
         {
             # New-Item -ItemType Directory creates the folder (like mkdir).
             New-Item -Path $LogFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
-        }
+        } # if
 
         # Generate a unique log filename with a timestamp.
         $token = (Get-Date).ToString('yyyyMMdd_HHmmss_fff')
         $script:LogFilePath = Join-Path -Path $LogFolder -ChildPath ("Update-UserFile_{0}.log" -f $token)
-    }
+    } # try
     catch
     {
         Write-Warning "Logging setup failed: $($_.Exception.Message)"
@@ -911,7 +911,7 @@ process
     if (-not $InputFile.Exists)
     {
         throw "InputFile not found: $($InputFile.FullName)"
-    }
+    } # if
 
     # Import-Csv reads a CSV file and converts each row into a PowerShell object.
     # Column headers become property names (e.g. $row.'Owner Login').
@@ -925,27 +925,27 @@ process
     if (-not [string]::IsNullOrWhiteSpace($UserToProcess))
     {
         $rows = $rows | Where-Object { $_.'Owner Login' -eq $UserToProcess }
-    }
+    } # if
 
     if (-not $rows)
     {
         Write-LogLine -Level 'WARN' -Message "No CSV rows found to process."
         return
-    }
+    } # if
 
     if (-not [string]::IsNullOrWhiteSpace($UserToProcess))
     {
         $ownerUpn = $UserToProcess
-    }
+    } # if
     else
     {
         $ownerUpn = ($rows | Select-Object -First 1).'Owner Login'
-    }
+    } # else
 
     if ([string]::IsNullOrWhiteSpace($ownerUpn))
     {
         throw "Owner Login is empty in the CSV."
-    }
+    } # if
 
     # Look up and validate the user's OneDrive drive.
     $drive = Get-ValidatedUserDrive -UserPrincipalName $ownerUpn
@@ -958,7 +958,7 @@ process
         $userLocalPath = Join-Path -Path $AllFilesDirectory -ChildPath $ownerUpn
         Write-LogLine -Message ("Uploading local files from '{0}' to OneDrive for '{1}'." -f $userLocalPath, $ownerUpn)
         Invoke-OneDriveUpload -DriveId $drive.Id -LocalSourcePath $userLocalPath -OwnerUpn $ownerUpn
-    }
+    } # if
 
     # ── Process each CSV row: resolve item, grant permission ─────────────────
     foreach ($row in $rows)
@@ -990,13 +990,13 @@ process
             Action                 = $null
             Status                 = 'Unknown'
             Error                  = $null
-        }
+        } # inline:$result = [pscustomobject]@{
         try
         {
             if ([string]::IsNullOrWhiteSpace($collab))
             {
                 throw "Collaborator Login is empty."
-            }
+            } # if
 
             if ([string]::IsNullOrWhiteSpace($graphRole))
             {
@@ -1005,7 +1005,7 @@ process
                 Write-LogLine -Message ("Skipping (role maps to None): Item='{0}', Collaborator='{1}', BoxPerm='{2}'" -f $itemName, $collab, $boxPerm)
                 $result
                 continue
-            }
+            } # if
 
             # Clean up the Box path for use with the Graph API.
             $normalizedPath = ConvertTo-OneDriveRelativePath -Path $itemPath
@@ -1014,7 +1014,7 @@ process
             if (-not [string]::IsNullOrWhiteSpace([string] $drive.WebUrl))
             {
                 Write-LogLine -Message ("Resolving drive item at: {0}/{1}" -f $drive.WebUrl.TrimEnd('/'), $normalizedPath)
-            }
+            } # if
 
             # URL-encode the path and look up the item in OneDrive.
             # The /root:/{path} syntax accesses a drive item by its path:
@@ -1026,7 +1026,7 @@ process
                 # It handles auth headers automatically.
                 # https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/invoke-mggraphrequest
                 Invoke-MgGraphRequest -Method GET -Uri $getItemUri -ErrorAction Stop
-            }
+            } # inline:$driveItem = Invoke-WithGraphRetry -Oper
 
             $result.DriveItemId = $driveItem.id
             $result.ExistsInOneDrive = $true
@@ -1059,7 +1059,7 @@ process
 
                 $inviteResponse = Invoke-WithGraphRetry -OperationName ("Invite '{0}' on '{1}'" -f $collab, $normalizedPath) -Operation {
                     Invoke-MgGraphRequest -Method POST -Uri $inviteUri -Body $body -ContentType 'application/json' -ErrorAction Stop
-                }
+                } # inline:$inviteResponse = Invoke-WithGraphRetry 
 
                 # ── Validate the invite response ────────────────────────────
                 # The API returns { value: [ { id, roles, ... } ] }.
@@ -1068,7 +1068,7 @@ process
                 if ($null -eq $grantedPermissions -or $grantedPermissions.Count -eq 0)
                 {
                     throw ("Invite API returned no permissions for collaborator '{0}' on item '{1}'." -f $collab, $normalizedPath)
-                }
+                } # if
 
                 $grantedEntry = $grantedPermissions | Select-Object -First 1
                 $grantedRoles = $grantedEntry.roles -join ', '
@@ -1079,19 +1079,19 @@ process
                     $errCode = $grantedEntry.error.code
                     $errMsg  = $grantedEntry.error.message
                     throw ("Invite failed for '{0}': [{1}] {2}" -f $collab, $errCode, $errMsg)
-                }
+                } # if
 
                 $result.Action = 'Invited'
                 $result.Status = 'Applied'
                 Write-LogLine -Message ("Granted '{0}' roles=[{1}] on '{2}' (PermissionId={3}, sendInvitation=false)" -f
                     $collab, $grantedRoles, $itemPath, $grantedEntry.id)
-            }
+            } # if
             else
             {
                 $result.Action = 'Invited'
                 $result.Status = 'WhatIf'
-            }
-        }
+            } # else
+        } # try
         catch
         {
             $result.Status = 'Failed'
@@ -1100,13 +1100,13 @@ process
             if ([object]::ReferenceEquals($result.ExistsInOneDrive, $null) -and $result.Error -match '404|itemNotFound|not found')
             {
                 $result.ExistsInOneDrive = $false
-            }
+            } # if
 
             Write-LogLine -Level 'ERROR' -Message ("Failed row: Item='{0}', Path='{1}', Collaborator='{2}'. Error={3}" -f $itemName, $itemPath, $collab, $result.Error)
         } # catch
 
         $result
-    }
+    } # foreach
 } # process
 
 # ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -1121,7 +1121,7 @@ end
         # Disconnect-MgGraph signs out of Microsoft Graph.
         # https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/disconnect-mggraph
         Disconnect-MgGraph | Out-Null
-    }
+    } # try
     catch
     {
         # Non-fatal — the session will be cleaned up when PowerShell exits anyway.
