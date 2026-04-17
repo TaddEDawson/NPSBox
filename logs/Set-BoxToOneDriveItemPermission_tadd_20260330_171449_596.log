@@ -1,8 +1,0 @@
-2026-03-30T17:14:49.597-04:00 [INFO] [L914] BEGIN Script: User=tadd, InputFile=C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv, MySiteHostUrl=https://m365cpi19595461-my.sharepoint.com, SharePointOnlineAdminUrl=https://m365cpi19595461-admin.sharepoint.com/, AllowUnknownRole=False, TargetLibraryTitle=Documents, AutoDiscoverDefaultLibrary=False
-2026-03-30T17:14:49.630-04:00 [INFO] [L923] BEGIN User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com
-2026-03-30T17:14:49.659-04:00 [ERROR] [L1265] Unhandled error while processing user 'AdilE@M365CPI19595461.OnMicrosoft.com': You are not signed in. Please use Connect-PnPOnline to connect.
-2026-03-30T17:14:49.737-04:00 [INFO] [L1281] END User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com; Duration=00:00:00.106
-2026-03-30T17:14:49.766-04:00 [INFO] [L923] BEGIN User Processing: UserToProcess=AmberR@M365CPI19595461.onmicrosoft.com
-2026-03-30T17:14:49.791-04:00 [ERROR] [L1265] Unhandled error while processing user 'AmberR@M365CPI19595461.onmicrosoft.com': You are not signed in. Please use Connect-PnPOnline to connect.
-2026-03-30T17:14:49.860-04:00 [INFO] [L1281] END User Processing: UserToProcess=AmberR@M365CPI19595461.onmicrosoft.com; Duration=00:00:00.093
-2026-03-30T17:14:49.882-04:00 [INFO] [L1295] END Script: Duration=00:00:00.285; LogFile=C:\Repos\NPSBox\Logs\Set-BoxToOneDriveItemPermission_tadd_20260330_171449_596.log

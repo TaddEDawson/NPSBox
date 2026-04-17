@@ -1,7 +1,0 @@
-2026-03-25T19:43:19.869-04:00 [INFO] BEGIN Script: User=tadd, InputFile=C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv, MySiteHostUrl=https://m365cpi19595461-my.sharepoint.com, AllowUnknownRole=False, TargetLibraryTitle=Documents, AutoDiscoverDefaultLibrary=False
-2026-03-25T19:43:19.875-04:00 [INFO] BEGIN User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com
-2026-03-25T19:43:19.900-04:00 [INFO] Reusing existing host-scoped PnP connection.
-2026-03-25T19:43:20.854-04:00 [ERROR] PersonalSiteUrl is empty for account 'AdilE@M365CPI19595461.OnMicrosoft.com'.
-2026-03-25T19:43:20.894-04:00 [ERROR] Unhandled error while processing user 'AdilE@M365CPI19595461.OnMicrosoft.com': User 'AdilE@M365CPI19595461.OnMicrosoft.com' does not have a PersonalSiteUrl. Ensure OneDrive is provisioned before running this script.
-2026-03-25T19:43:21.037-04:00 [INFO] END User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com; Duration=00:00:01.162
-2026-03-25T19:43:21.066-04:00 [INFO] END Script: Duration=00:00:01.197; LogFile=C:\Repos\NPSBox\Logs\Set-BoxToOneDriveItemPermission_tadd_20260325_194319_868.log

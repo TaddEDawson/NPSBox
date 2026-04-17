@@ -1,7 +1,0 @@
-2026-03-25T21:10:04.487-04:00 [INFO] [L822] BEGIN Script: User=tadd, InputFile=C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv, MySiteHostUrl=https://m365cpi19595461-my.sharepoint.com, SharePointOnlineAdminUrl=https://m365cpi19595461-admin.sharepoint.com/, AllowUnknownRole=False, TargetLibraryTitle=Documents, AutoDiscoverDefaultLibrary=False
-2026-03-25T21:10:04.493-04:00 [INFO] [L832] BEGIN User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com
-2026-03-25T21:10:04.527-04:00 [INFO] [L847] Reusing existing admin-scoped PnP connection.
-2026-03-25T21:10:05.433-04:00 [ERROR] [L903] PersonalSiteUrl is empty for account 'AdilE@M365CPI19595461.OnMicrosoft.com'.
-2026-03-25T21:10:05.463-04:00 [ERROR] [L1142] Unhandled error while processing user 'AdilE@M365CPI19595461.OnMicrosoft.com': User 'AdilE@M365CPI19595461.OnMicrosoft.com' does not have a PersonalSiteUrl. Ensure OneDrive is provisioned before running this script.
-2026-03-25T21:10:05.602-04:00 [INFO] [L1164] END User Processing: UserToProcess=AdilE@M365CPI19595461.OnMicrosoft.com; Duration=00:00:01.108
-2026-03-25T21:10:05.626-04:00 [INFO] [L1172] END Script: Duration=00:00:01.166; LogFile=C:\Repos\NPSBox\Logs\Set-BoxToOneDriveItemPermission_tadd_20260325_211004_458.log
