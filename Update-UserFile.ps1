@@ -118,7 +118,7 @@
 
 .PARAMETER Scopes
     Permission scopes requested during Interactive auth.
-    Defaults to 'Files.ReadWrite.All' and 'Application.ReadWrite.All'.
+    Defaults to 'Files.ReadWrite.All'.
     Scopes define what the script is allowed to do on behalf of the signed-in user.
     https://learn.microsoft.com/graph/permissions-overview
 
@@ -190,7 +190,7 @@ param
     # Path to the input CSV file.  [System.IO.FileInfo] automatically resolves
     # the string to a file object with .Exists, .FullName, etc.
     [Parameter()]
-    [System.IO.FileInfo] $InputFile = "C:\Repos\NPSBox\UserIfo.csv"
+    [System.IO.FileInfo] $InputFile = "C:\Repos\NPSBox\UserInfo.csv"
     ,
     # The owner's UPN to filter on in the CSV.
     # ValueFromPipeline lets you pipe UPNs:  'user1@contoso.com','user2@contoso.com' | .\Update-UserFile.ps1
@@ -232,8 +232,7 @@ param
     # https://learn.microsoft.com/graph/permissions-reference
     [Parameter()]
     [string[]] $Scopes = @(
-        'Files.ReadWrite.All',
-        'Application.ReadWrite.All'
+        'Files.ReadWrite.All'
     )
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
