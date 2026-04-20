@@ -19,7 +19,9 @@
     HOW IT WORKS (step by step):
       1. Authenticates to Microsoft Graph (interactive browser sign-in or
          certificate-based app-only auth).
-      2. Reads the CSV and filters rows for the specified user.
+      2. Reads the CSV and identifies unique owners to process.
+         If -UserToProcess is specified, only that user is processed;
+         otherwise all unique owners in the CSV are processed.
       3. Looks up the user's OneDrive drive via the Graph API.
       4. Optionally uploads local files/folders to the user's OneDrive
          (when -UploadFiles is specified).
@@ -75,6 +77,7 @@
 .PARAMETER UserToProcess
     The owner's UPN (User Principal Name) to process.
     Only CSV rows matching this owner will be processed.
+    When omitted or empty, all unique owners in the CSV are processed.
     Accepts pipeline input so you can pipe a list of users.
     https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_pipelines
 
@@ -187,7 +190,7 @@ param
     # Path to the input CSV file.  [System.IO.FileInfo] automatically resolves
     # the string to a file object with .Exists, .FullName, etc.
     [Parameter()]
-    [System.IO.FileInfo] $InputFile = "C:\Repos\NPSBox\Box_Collaboration_Sample_Data.csv"
+    [System.IO.FileInfo] $InputFile = "C:\Repos\NPSBox\UserIfo.csv"
     ,
     # The owner's UPN to filter on in the CSV.
     # ValueFromPipeline lets you pipe UPNs:  'user1@contoso.com','user2@contoso.com' | .\Update-UserFile.ps1
@@ -195,7 +198,7 @@ param
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_parameters#alias-attribute
     [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
     [Alias('Owner Login', 'User', 'UPN', 'Account')]
-    [string] $UserToProcess = "AdilE@M365CPI19595461.OnMicrosoft.com"
+    [string] $UserToProcess
     ,
     # How to authenticate — see .DESCRIPTION for details on each mode.
     # ValidateSet restricts input to the listed values and enables tab-completion.
@@ -915,7 +918,8 @@ begin
 # ╔═══════════════════════════════════════════════════════════════════════════════╗
 # ║  PROCESS BLOCK                                                               ║
 # ║  Runs once for each pipeline input object ($UserToProcess).                  ║
-# ║  If not piped, runs once with the default parameter value.                   ║
+# ║  If not piped and $UserToProcess is empty, processes all unique owners       ║
+# ║  found in the CSV.                                                           ║
 # ║  This is where the main work happens: read CSV, upload files, grant perms.   ║
 # ║  https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_methods ║
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
@@ -929,197 +933,237 @@ process
     # Import-Csv reads a CSV file and converts each row into a PowerShell object.
     # Column headers become property names (e.g. $row.'Owner Login').
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/import-csv
-    $rows = Import-Csv -LiteralPath $InputFile.FullName
+    $allRows = Import-Csv -LiteralPath $InputFile.FullName
 
-    # Filter to only the rows belonging to this user.
+    # Filter to only the rows belonging to this user when specified.
     # Where-Object filters objects in the pipeline based on a condition.
     # $_ represents the current object in the pipeline.
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/where-object
     if (-not [string]::IsNullOrWhiteSpace($UserToProcess))
     {
-        $rows = $rows | Where-Object { $_.'Owner Login' -eq $UserToProcess }
+        $allRows = $allRows | Where-Object { $_.'Owner Login' -eq $UserToProcess }
     } # if
 
-    if (-not $rows)
+    if (-not $allRows)
     {
         Write-LogLine -Level 'WARN' -Message "No CSV rows found to process."
         return
     } # if
 
-    if (-not [string]::IsNullOrWhiteSpace($UserToProcess))
-    {
-        $ownerUpn = $UserToProcess
-    } # if
-    else
-    {
-        $ownerUpn = ($rows | Select-Object -First 1).'Owner Login'
-    } # else
+    # Get unique owner UPNs from the CSV rows.
+    # Select-Object -Unique returns distinct values.
+    # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/select-object
+    $uniqueOwners = @($allRows |
+        ForEach-Object { $_.'Owner Login' } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique)
 
-    if ([string]::IsNullOrWhiteSpace($ownerUpn))
+    if ($uniqueOwners.Count -eq 0)
     {
-        throw "Owner Login is empty in the CSV."
-    } # if
-
-    # Look up and validate the user's OneDrive drive.
-    $drive = Get-ValidatedUserDrive -UserPrincipalName $ownerUpn
-
-    # ── Upload local files if -UploadFiles is specified ──────────────────────
-    # The local folder must be named by the user's UPN under AllFilesDirectory.
-    # Example: C:\Repos\NPSBox\LocalFiles\user@contoso.com\
-    if ($UploadFiles)
-    {
-        $userLocalPath = Join-Path -Path $AllFilesDirectory -ChildPath $ownerUpn
-        Write-LogLine -Message ("Uploading local files from '{0}' to OneDrive for '{1}'." -f $userLocalPath, $ownerUpn)
-        Invoke-OneDriveUpload -DriveId $drive.Id -LocalSourcePath $userLocalPath -OwnerUpn $ownerUpn
+        throw "Owner Login is empty in all CSV rows."
     } # if
 
-    # ── Process each CSV row: resolve item, grant permission ─────────────────
-    foreach ($row in $rows)
+    Write-LogLine -Message ("Processing {0} unique owner(s): {1}" -f $uniqueOwners.Count, ($uniqueOwners -join ', '))
+
+    # ── Iterate over each unique owner ───────────────────────────────────────
+    foreach ($ownerUpn in $uniqueOwners)
     {
-        $itemPath = [string] $row.Path
-        $itemName = [string] $row.'Item Name'
-        $collab   = [string] $row.'Collaborator Login'
-        $boxPerm  = [string] $row.'Collaborator Permission'
+        Write-LogLine -Message ("── Begin processing owner: {0} ──" -f $ownerUpn)
 
-        # Map the Box permission to a Graph role (read/write/null).
-        $graphRole = ConvertTo-GraphRole -BoxPermission $boxPerm
+        # Filter rows for this owner.
+        $rows = $allRows | Where-Object { $_.'Owner Login' -eq $ownerUpn }
 
-        # Create a result object to track what happens with this row.
-        # [pscustomobject] is a lightweight object with named properties.
-        # This object is output to the pipeline so callers can inspect results.
-        # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_pscustomobject
-        $result = [pscustomobject]@{
-            OwnerLogin             = $ownerUpn
-            ItemName               = $itemName
-            Path                   = $itemPath
-            NormalizedPath         = $null
-            CollaboratorLogin      = $collab
-            CollaboratorPermission = $boxPerm
-            GraphRole              = $graphRole
-            DriveId                = $drive.Id
-            OneDriveWebUrl         = $drive.WebUrl
-            ExistsInOneDrive       = $null
-            DriveItemId            = $null
-            Action                 = $null
-            Status                 = 'Unknown'
-            Error                  = $null
-        } # inline:$result = [pscustomobject]@{
+        # Look up and validate the user's OneDrive drive.
+        # Wrapped in try/catch so one failing user does not stop others.
         try
         {
-            if ([string]::IsNullOrWhiteSpace($collab))
-            {
-                throw "Collaborator Login is empty."
-            } # if
-
-            if ([string]::IsNullOrWhiteSpace($graphRole))
-            {
-                $result.Action = 'Skipped'
-                $result.Status = 'Skipped'
-                Write-LogLine -Message ("Skipping (role maps to None): Item='{0}', Collaborator='{1}', BoxPerm='{2}'" -f $itemName, $collab, $boxPerm)
-                $result
-                continue
-            } # if
-
-            # Clean up the Box path for use with the Graph API.
-            $normalizedPath = ConvertTo-OneDriveRelativePath -Path $itemPath
-            $result.NormalizedPath = $normalizedPath
-
-            if (-not [string]::IsNullOrWhiteSpace([string] $drive.WebUrl))
-            {
-                Write-LogLine -Message ("Resolving drive item at: {0}/{1}" -f $drive.WebUrl.TrimEnd('/'), $normalizedPath)
-            } # if
-
-            # URL-encode the path and look up the item in OneDrive.
-            # The /root:/{path} syntax accesses a drive item by its path:
-            # https://learn.microsoft.com/graph/api/driveitem-get?view=graph-rest-1.0#access-a-driveitem-by-path
-            $encodedPath = ConvertTo-GraphEncodedPath -RelativePath $normalizedPath
-            $getItemUri = "https://graph.microsoft.com/v1.0/drives/$($drive.Id)/root:/$encodedPath"
-            $driveItem = Invoke-WithGraphRetry -OperationName ("Resolve drive item '{0}'" -f $normalizedPath) -Operation {
-                # Invoke-MgGraphRequest is a generic Graph API caller.
-                # It handles auth headers automatically.
-                # https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/invoke-mggraphrequest
-                Invoke-MgGraphRequest -Method GET -Uri $getItemUri -ErrorAction Stop
-            } # inline:$driveItem = Invoke-WithGraphRetry -Oper
-
-            $result.DriveItemId = $driveItem.id
-            $result.ExistsInOneDrive = $true
-
-            # ShouldProcess enables -WhatIf and -Confirm support.
-            # When -WhatIf is used, it prints what WOULD happen and returns $false.
-            # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_methods#shouldprocess
-            $target = "DriveItemId=$($driveItem.id) Path='$itemPath' -> grant '$collab' Role='$graphRole'"
-            if ($PSCmdlet.ShouldProcess($target, "Invite collaborator via Microsoft Graph (silent grant)"))
-            {
-                # ── Grant permission using the driveItem: invite API ─────────
-                # POST /drives/{driveId}/items/{itemId}/invite
-                # This creates a sharing permission on the item.
-                #
-                # Key body properties:
-                #   recipients     : array of { email } objects — who to share with
-                #   roles          : 'read' or 'write'
-                #   requireSignIn  : recipient must sign in to access
-                #   sendInvitation : false = NO EMAIL is sent; permission is granted silently
-                #
-                # https://learn.microsoft.com/graph/api/driveitem-invite?view=graph-rest-1.0
-                $inviteUri = "https://graph.microsoft.com/v1.0/drives/$($drive.Id)/items/$($driveItem.id)/invite"
-
-                $body = @{
-                    recipients      = @(@{ email = $collab })
-                    roles           = @($graphRole)     # 'read' or 'write'
-                    requireSignIn   = $true              # recipient must authenticate
-                    sendInvitation  = $false             # NO email notification sent
-                } | ConvertTo-Json -Depth 6
-
-                $inviteResponse = Invoke-WithGraphRetry -OperationName ("Invite '{0}' on '{1}'" -f $collab, $normalizedPath) -Operation {
-                    Invoke-MgGraphRequest -Method POST -Uri $inviteUri -Body $body -ContentType 'application/json' -ErrorAction Stop
-                } # inline:$inviteResponse = Invoke-WithGraphRetry 
-
-                # ── Validate the invite response ────────────────────────────
-                # The API returns { value: [ { id, roles, ... } ] }.
-                # A 207 Multi-Status can include per-recipient errors.
-                $grantedPermissions = $inviteResponse.value
-                if ($null -eq $grantedPermissions -or $grantedPermissions.Count -eq 0)
-                {
-                    throw ("Invite API returned no permissions for collaborator '{0}' on item '{1}'." -f $collab, $normalizedPath)
-                } # if
-
-                $grantedEntry = $grantedPermissions | Select-Object -First 1
-                $grantedRoles = $grantedEntry.roles -join ', '
-
-                # Check for per-recipient errors (207 partial success).
-                if ($null -ne $grantedEntry.error)
-                {
-                    $errCode = $grantedEntry.error.code
-                    $errMsg  = $grantedEntry.error.message
-                    throw ("Invite failed for '{0}': [{1}] {2}" -f $collab, $errCode, $errMsg)
-                } # if
-
-                $result.Action = 'Invited'
-                $result.Status = 'Applied'
-                Write-LogLine -Message ("Granted '{0}' roles=[{1}] on '{2}' (PermissionId={3}, sendInvitation=false)" -f
-                    $collab, $grantedRoles, $itemPath, $grantedEntry.id)
-            } # if
-            else
-            {
-                $result.Action = 'Invited'
-                $result.Status = 'WhatIf'
-            } # else
+            $drive = Get-ValidatedUserDrive -UserPrincipalName $ownerUpn
         } # try
         catch
         {
-            $result.Status = 'Failed'
-            $result.Error  = $_.Exception.Message
-
-            if ([object]::ReferenceEquals($result.ExistsInOneDrive, $null) -and $result.Error -match '404|itemNotFound|not found')
+            Write-LogLine -Level 'ERROR' -Message ("Failed to resolve OneDrive for '{0}': {1}. Skipping this owner." -f $ownerUpn, $_.Exception.Message)
+            foreach ($row in $rows)
             {
-                $result.ExistsInOneDrive = $false
-            } # if
-
-            Write-LogLine -Level 'ERROR' -Message ("Failed row: Item='{0}', Path='{1}', Collaborator='{2}'. Error={3}" -f $itemName, $itemPath, $collab, $result.Error)
+                [pscustomobject]@{
+                    OwnerLogin             = $ownerUpn
+                    ItemName               = $row.'Item Name'
+                    Path                   = $row.Path
+                    NormalizedPath         = $null
+                    CollaboratorLogin      = $row.'Collaborator Login'
+                    CollaboratorPermission = $row.'Collaborator Permission'
+                    GraphRole              = $null
+                    DriveId                = $null
+                    OneDriveWebUrl         = $null
+                    ExistsInOneDrive       = $null
+                    DriveItemId            = $null
+                    Action                 = $null
+                    Status                 = 'Failed'
+                    Error                  = $_.Exception.Message
+                } # inline:[pscustomobject]@{
+            } # foreach
+            continue
         } # catch
 
-        $result
-    } # foreach
+        # ── Upload local files if -UploadFiles is specified ──────────────────────
+        # The local folder must be named by the user's UPN under AllFilesDirectory.
+        # Example: C:\Repos\NPSBox\LocalFiles\user@contoso.com\
+        if ($UploadFiles)
+        {
+            $userLocalPath = Join-Path -Path $AllFilesDirectory -ChildPath $ownerUpn
+            Write-LogLine -Message ("Uploading local files from '{0}' to OneDrive for '{1}'." -f $userLocalPath, $ownerUpn)
+            Invoke-OneDriveUpload -DriveId $drive.Id -LocalSourcePath $userLocalPath -OwnerUpn $ownerUpn
+        } # if
+
+        # ── Process each CSV row for this owner: resolve item, grant permission ──
+        foreach ($row in $rows)
+        {
+            $itemPath = [string] $row.Path
+            $itemName = [string] $row.'Item Name'
+            $collab   = [string] $row.'Collaborator Login'
+            $boxPerm  = [string] $row.'Collaborator Permission'
+
+            # Map the Box permission to a Graph role (read/write/null).
+            $graphRole = ConvertTo-GraphRole -BoxPermission $boxPerm
+
+            # Create a result object to track what happens with this row.
+            # [pscustomobject] is a lightweight object with named properties.
+            # This object is output to the pipeline so callers can inspect results.
+            # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_pscustomobject
+            $result = [pscustomobject]@{
+                OwnerLogin             = $ownerUpn
+                ItemName               = $itemName
+                Path                   = $itemPath
+                NormalizedPath         = $null
+                CollaboratorLogin      = $collab
+                CollaboratorPermission = $boxPerm
+                GraphRole              = $graphRole
+                DriveId                = $drive.Id
+                OneDriveWebUrl         = $drive.WebUrl
+                ExistsInOneDrive       = $null
+                DriveItemId            = $null
+                Action                 = $null
+                Status                 = 'Unknown'
+                Error                  = $null
+            } # inline:$result = [pscustomobject]@{
+            try
+            {
+                if ([string]::IsNullOrWhiteSpace($collab))
+                {
+                    throw "Collaborator Login is empty."
+                } # if
+
+                if ([string]::IsNullOrWhiteSpace($graphRole))
+                {
+                    $result.Action = 'Skipped'
+                    $result.Status = 'Skipped'
+                    Write-LogLine -Message ("Skipping (role maps to None): Item='{0}', Collaborator='{1}', BoxPerm='{2}'" -f $itemName, $collab, $boxPerm)
+                    $result
+                    continue
+                } # if
+
+                # Clean up the Box path for use with the Graph API.
+                $normalizedPath = ConvertTo-OneDriveRelativePath -Path $itemPath
+                $result.NormalizedPath = $normalizedPath
+
+                if (-not [string]::IsNullOrWhiteSpace([string] $drive.WebUrl))
+                {
+                    Write-LogLine -Message ("Resolving drive item at: {0}/{1}" -f $drive.WebUrl.TrimEnd('/'), $normalizedPath)
+                } # if
+
+                # URL-encode the path and look up the item in OneDrive.
+                # The /root:/{path} syntax accesses a drive item by its path:
+                # https://learn.microsoft.com/graph/api/driveitem-get?view=graph-rest-1.0#access-a-driveitem-by-path
+                $encodedPath = ConvertTo-GraphEncodedPath -RelativePath $normalizedPath
+                $getItemUri = "https://graph.microsoft.com/v1.0/drives/$($drive.Id)/root:/$encodedPath"
+                $driveItem = Invoke-WithGraphRetry -OperationName ("Resolve drive item '{0}'" -f $normalizedPath) -Operation {
+                    # Invoke-MgGraphRequest is a generic Graph API caller.
+                    # It handles auth headers automatically.
+                    # https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/invoke-mggraphrequest
+                    Invoke-MgGraphRequest -Method GET -Uri $getItemUri -ErrorAction Stop
+                } # inline:$driveItem = Invoke-WithGraphRetry -Oper
+
+                $result.DriveItemId = $driveItem.id
+                $result.ExistsInOneDrive = $true
+
+                # ShouldProcess enables -WhatIf and -Confirm support.
+                # When -WhatIf is used, it prints what WOULD happen and returns $false.
+                # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_methods#shouldprocess
+                $target = "DriveItemId=$($driveItem.id) Path='$itemPath' -> grant '$collab' Role='$graphRole'"
+                if ($PSCmdlet.ShouldProcess($target, "Invite collaborator via Microsoft Graph (silent grant)"))
+                {
+                    # ── Grant permission using the driveItem: invite API ─────────
+                    # POST /drives/{driveId}/items/{itemId}/invite
+                    # This creates a sharing permission on the item.
+                    #
+                    # Key body properties:
+                    #   recipients     : array of { email } objects — who to share with
+                    #   roles          : 'read' or 'write'
+                    #   requireSignIn  : recipient must sign in to access
+                    #   sendInvitation : false = NO EMAIL is sent; permission is granted silently
+                    #
+                    # https://learn.microsoft.com/graph/api/driveitem-invite?view=graph-rest-1.0
+                    $inviteUri = "https://graph.microsoft.com/v1.0/drives/$($drive.Id)/items/$($driveItem.id)/invite"
+
+                    $body = @{
+                        recipients      = @(@{ email = $collab })
+                        roles           = @($graphRole)     # 'read' or 'write'
+                        requireSignIn   = $true              # recipient must authenticate
+                        sendInvitation  = $false             # NO email notification sent
+                    } | ConvertTo-Json -Depth 6
+
+                    $inviteResponse = Invoke-WithGraphRetry -OperationName ("Invite '{0}' on '{1}'" -f $collab, $normalizedPath) -Operation {
+                        Invoke-MgGraphRequest -Method POST -Uri $inviteUri -Body $body -ContentType 'application/json' -ErrorAction Stop
+                    } # inline:$inviteResponse = Invoke-WithGraphRetry 
+
+                    # ── Validate the invite response ────────────────────────────
+                    # The API returns { value: [ { id, roles, ... } ] }.
+                    # A 207 Multi-Status can include per-recipient errors.
+                    $grantedPermissions = $inviteResponse.value
+                    if ($null -eq $grantedPermissions -or $grantedPermissions.Count -eq 0)
+                    {
+                        throw ("Invite API returned no permissions for collaborator '{0}' on item '{1}'." -f $collab, $normalizedPath)
+                    } # if
+
+                    $grantedEntry = $grantedPermissions | Select-Object -First 1
+                    $grantedRoles = $grantedEntry.roles -join ', '
+
+                    # Check for per-recipient errors (207 partial success).
+                    if ($null -ne $grantedEntry.error)
+                    {
+                        $errCode = $grantedEntry.error.code
+                        $errMsg  = $grantedEntry.error.message
+                        throw ("Invite failed for '{0}': [{1}] {2}" -f $collab, $errCode, $errMsg)
+                    } # if
+
+                    $result.Action = 'Invited'
+                    $result.Status = 'Applied'
+                    Write-LogLine -Message ("Granted '{0}' roles=[{1}] on '{2}' (PermissionId={3}, sendInvitation=false)" -f
+                        $collab, $grantedRoles, $itemPath, $grantedEntry.id)
+                } # if
+                else
+                {
+                    $result.Action = 'Invited'
+                    $result.Status = 'WhatIf'
+                } # else
+            } # try
+            catch
+            {
+                $result.Status = 'Failed'
+                $result.Error  = $_.Exception.Message
+
+                if ([object]::ReferenceEquals($result.ExistsInOneDrive, $null) -and $result.Error -match '404|itemNotFound|not found')
+                {
+                    $result.ExistsInOneDrive = $false
+                } # if
+
+                Write-LogLine -Level 'ERROR' -Message ("Failed row: Item='{0}', Path='{1}', Collaborator='{2}'. Error={3}" -f $itemName, $itemPath, $collab, $result.Error)
+            } # catch
+
+            $result
+        } # foreach — row
+
+        Write-LogLine -Message ("── Finished processing owner: {0} ──" -f $ownerUpn)
+    } # foreach — owner
 } # process
 
 # ╔═══════════════════════════════════════════════════════════════════════════════╗
