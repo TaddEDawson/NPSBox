@@ -115,7 +115,7 @@
 
 .PARAMETER Scopes
     Permission scopes requested during Interactive auth.
-    Defaults to 'Files.ReadWrite.All'.
+    Defaults to 'Files.ReadWrite.All' and 'Application.ReadWrite.All'.
     Scopes define what the script is allowed to do on behalf of the signed-in user.
     https://learn.microsoft.com/graph/permissions-overview
 
@@ -229,7 +229,8 @@ param
     # https://learn.microsoft.com/graph/permissions-reference
     [Parameter()]
     [string[]] $Scopes = @(
-        'Files.ReadWrite.All'
+        'Files.ReadWrite.All',
+        'Application.ReadWrite.All'
     )
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
@@ -590,9 +591,18 @@ begin
             $existingContext = Get-MgContext -ErrorAction SilentlyContinue
             if ($null -ne $existingContext -and $existingContext.TenantId -eq $TenantId)
             {
-                Write-LogLine -Message ("Reusing existing Microsoft Graph context. TenantId={0}, AppName={1}, AuthType={2}" -f
-                    $existingContext.TenantId, $existingContext.AppName, $existingContext.AuthType)
-                return
+                # Verify the existing session has all the scopes the caller requires.
+                $missingScopes = $Scopes | Where-Object { $_ -notin $existingContext.Scopes }
+                if ($missingScopes.Count -gt 0)
+                {
+                    Write-LogLine -Message ("Existing Graph context is missing required scopes: {0}. Re-authenticating." -f ($missingScopes -join ', '))
+                } # if
+                else
+                {
+                    Write-LogLine -Message ("Reusing existing Microsoft Graph context. TenantId={0}, AppName={1}, AuthType={2}" -f
+                        $existingContext.TenantId, $existingContext.AppName, $existingContext.AuthType)
+                    return
+                } # else
             } # if
 
             if ([string]::IsNullOrWhiteSpace($TenantId))
