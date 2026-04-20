@@ -8,6 +8,9 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
+    Version: 1.0.0.0
+    Date:    2026-04-20
+
 .DESCRIPTION
     This script migrates Box collaboration data into OneDrive for Business.
     It reads a CSV file that describes who has access to what, then applies
