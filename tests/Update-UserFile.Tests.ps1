@@ -366,7 +366,7 @@ Describe 'Update-UserFile.ps1' {
             } } | Should -Throw
         }
 
-        It 'should throw when drive lookup fails' {
+        It 'should output Failed results when drive lookup fails for a user' {
             $rows = @(New-CsvRow)
             $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
 
@@ -374,10 +374,14 @@ Describe 'Update-UserFile.ps1' {
                 throw [System.Exception]::new('Drive not found')
             }
 
-            { & {
+            $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
                     -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
-            } } | Should -Throw
+            } 6>&1
+
+            $results | Should -Not -BeNullOrEmpty
+            $results[0].Status | Should -Be 'Failed'
+            $results[0].Error | Should -Match 'Drive not found'
         }
 
         It 'should mark item as not existing when 404 error occurs' {
@@ -471,6 +475,99 @@ Describe 'Update-UserFile.ps1' {
             } 6>&1
 
             Assert-MockCalled -CommandName 'Disconnect-MgGraph' -Scope It
+        }
+    }
+
+    Context 'Script Execution - Multi-User Processing' {
+        BeforeEach {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_multi.csv'
+            $rows = @(
+                (New-CsvRow -OwnerLogin 'owner1@contoso.com' -ItemName 'Owner1Doc.txt' -Path 'All Files/Docs' -CollaboratorLogin 'collab1@contoso.com' -CollaboratorPermission 'Editor'),
+                (New-CsvRow -OwnerLogin 'owner2@contoso.com' -ItemName 'Owner2Doc.txt' -Path 'All Files/Reports' -CollaboratorLogin 'collab2@contoso.com' -CollaboratorPermission 'Viewer')
+            )
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_multi'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
+            }
+        }
+
+        It 'should process all unique owners when UserToProcess is not specified' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv `
+                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results.Count | Should -Be 2
+            ($results | Where-Object { $_.OwnerLogin -eq 'owner1@contoso.com' }).Count | Should -Be 1
+            ($results | Where-Object { $_.OwnerLogin -eq 'owner2@contoso.com' }).Count | Should -Be 1
+        }
+
+        It 'should apply correct roles per owner when processing all users' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv `
+                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $owner1Result = $results | Where-Object { $_.OwnerLogin -eq 'owner1@contoso.com' }
+            $owner1Result.GraphRole | Should -Be 'write'
+            $owner1Result.Status | Should -Be 'Applied'
+
+            $owner2Result = $results | Where-Object { $_.OwnerLogin -eq 'owner2@contoso.com' }
+            $owner2Result.GraphRole | Should -Be 'read'
+            $owner2Result.Status | Should -Be 'Applied'
+        }
+
+        It 'should continue processing remaining owners when one fails' {
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                param($UserId)
+                if ($UserId -eq 'owner1@contoso.com') {
+                    throw [System.Exception]::new('Drive not provisioned')
+                }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv `
+                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results.Count | Should -Be 2
+
+            $failedResult = $results | Where-Object { $_.OwnerLogin -eq 'owner1@contoso.com' }
+            $failedResult.Status | Should -Be 'Failed'
+            $failedResult.Error | Should -Match 'Drive not provisioned'
+
+            $successResult = $results | Where-Object { $_.OwnerLogin -eq 'owner2@contoso.com' }
+            $successResult.Status | Should -Be 'Applied'
+        }
+
+        It 'should filter to single owner when UserToProcess is specified' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'owner2@contoso.com' `
+                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results.Count | Should -Be 1
+            $results[0].OwnerLogin | Should -Be 'owner2@contoso.com'
+            $results[0].ItemName | Should -Be 'Owner2Doc.txt'
         }
     }
 
