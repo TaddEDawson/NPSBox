@@ -183,7 +183,7 @@ param
     [string] $ClientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
     ,
     # Certificate thumbprint for app-only auth.
-    [Parameter(Mandatory = $true)]
+    [Parameter()]
     [string] $CertificateThumbprint = "9D0F9B62AC3B002E56C2A304E88AD429813E55E2"
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
