@@ -80,8 +80,10 @@ See `Box_Collaboration_Sample_Data.csv` for a working example.
 
 For a given Box owner (user), the script:
 
-1. **Authenticates** to Microsoft Graph (interactive browser sign-in or certificate-based app-only auth).
-2. **Reads the CSV** and filters rows for the specified user.
+1. **Authenticates** to Microsoft Graph using certificate-based app-only auth.
+2. **Reads the CSV** and identifies unique owners to process.
+   If `-UserToProcess` is specified, only that user is processed;
+   otherwise all unique owners in the CSV are processed.
 3. **Looks up** the user's OneDrive drive via the [Graph API](https://learn.microsoft.com/graph/overview).
 4. **Optionally uploads** local files and folders to the user's OneDrive (when `-UploadFiles` is specified).
 5. **Resolves each item** by path in OneDrive using the [`driveItem: get` API](https://learn.microsoft.com/graph/api/driveitem-get?view=graph-rest-1.0#access-a-driveitem-by-path).
@@ -100,11 +102,11 @@ Install-Module Microsoft.Graph.Files          -Scope CurrentUser
 ```
 
 - [Microsoft Graph PowerShell SDK installation guide](https://learn.microsoft.com/powershell/microsoftgraph/installation)
-- **Azure AD App Registration** with the appropriate permissions:
-  - **Application permissions** (Certificate auth): `Files.ReadWrite.All`, `User.Read.All`
-  - **Delegated permissions** (Interactive auth): `Files.ReadWrite.All`
+- **Azure AD App Registration** with the following **Application** permission
+  granted with admin consent:
+  - `Files.ReadWrite.All`
   - [Register an application](https://learn.microsoft.com/entra/identity-platform/quickstart-register-app)
-- For Certificate auth: a certificate uploaded to the app registration — [Certificate credentials](https://learn.microsoft.com/entra/identity-platform/certificate-credentials)
+- A certificate uploaded to the app registration — [Certificate credentials](https://learn.microsoft.com/entra/identity-platform/certificate-credentials)
 
 > **Important:** Do not load `PnP.PowerShell` in the same session as `Update-UserFile.ps1`. PnP.PowerShell bundles `Microsoft.Graph.Core` 1.x, which conflicts with the Graph SDK v2. Start a fresh `pwsh` session.
 
@@ -112,15 +114,11 @@ Install-Module Microsoft.Graph.Files          -Scope CurrentUser
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `-InputFile` | `FileInfo` | No | `Box_Collaboration_Sample_Data.csv` | Path to the input CSV file |
-| `-UserToProcess` | `string` | No | — | Owner UPN to filter on. Accepts pipeline input. Aliases: `Owner Login`, `User`, `UPN`, `Account` |
-| `-AuthMode` | `string` | No | `Interactive` | `Interactive` or `Certificate` |
+| `-InputFile` | `FileInfo` | No | `UserInfo.csv` | Path to the input CSV file |
+| `-UserToProcess` | `string` | No | — | Owner UPN to filter on. When omitted, all unique owners are processed. Accepts pipeline input. Aliases: `Owner Login`, `User`, `UPN`, `Account` |
 | `-TenantId` | `string` | No | — | Microsoft 365 tenant ID (GUID). [Find your tenant ID](https://learn.microsoft.com/entra/fundamentals/how-to-find-tenant) |
-| `-ClientId` | `string` | No | — | App registration client ID (required for Certificate auth) |
-| `-CertificateThumbprint` | `string` | No | — | SHA-1 thumbprint of a certificate in `Cert:\CurrentUser\My` |
-| `-CertificatePath` | `string` | No | — | Path to a `.pfx` certificate file (alternative to thumbprint) |
-| `-CertificatePassword` | `SecureString` | No | — | Password for the `.pfx` file |
-| `-Scopes` | `string[]` | No | `Files.ReadWrite.All` | Graph permission scopes for Interactive auth |
+| `-ClientId` | `string` | No | — | App registration client ID (GUID) |
+| `-CertificateThumbprint` | `string` | **Yes** | — | SHA-1 thumbprint of a certificate in `Cert:\CurrentUser\My` |
 | `-LogFolder` | `string` | No | `.\Logs` | Folder for timestamped log files |
 | `-AllFilesDirectory` | `string` | No | `.\LocalFiles` | Root folder containing per-user subfolders of local files to upload |
 | `-UploadFiles` | `switch` | No | — | When present, uploads local files to OneDrive before applying permissions |
@@ -145,93 +143,97 @@ Rows with unmapped roles are skipped with a log entry.
 
 ### Authentication
 
-`Update-UserFile.ps1` supports two authentication modes via `-AuthMode`:
+`Update-UserFile.ps1` uses certificate-based app-only authentication. The app registration
+must have the **Application** permission `Files.ReadWrite.All` granted with admin consent.
 
-| Mode | Description | Use case |
-|---|---|---|
-| `Interactive` | Opens a browser for user sign-in (delegated permissions) | Testing, one-off runs |
-| `Certificate` | Uses a certificate for app-only auth (application permissions) | Automated/scheduled runs |
-
-The script reuses an existing Graph session if the `TenantId` matches, avoiding redundant sign-in prompts.
+The script reuses an existing Graph session if the `TenantId` matches, avoiding redundant authentication.
 
 - [Connect-MgGraph reference](https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/connect-mggraph)
 - [Graph authentication overview](https://learn.microsoft.com/powershell/microsoftgraph/authentication-commands)
 
 ### Usage examples
 
-#### 1) Dry-run with interactive auth (recommended first)
+#### 1) Dry-run (recommended first)
 
 ```powershell
-.\Update-UserFile.ps1 `
-  -InputFile .\Box_Collaboration_Sample_Data.csv `
-  -UserToProcess "user@contoso.com" `
-  -AuthMode Interactive `
-  -TenantId "<tenant-guid>" `
-  -Verbose -WhatIf
+$params = @{
+    InputFile            = '.\Box_Collaboration_Sample_Data.csv'
+    UserToProcess        = 'user@contoso.com'
+    TenantId             = '<tenant-guid>'
+    ClientId             = '<app-guid>'
+    CertificateThumbprint = '<thumbprint>'
+    Verbose              = $true
+    WhatIf               = $true
+}
+.\Update-UserFile.ps1 @params
 ```
 
-#### 2) Apply permissions with certificate auth (unattended)
+#### 2) Apply permissions for a specific user
 
 ```powershell
-.\Update-UserFile.ps1 `
-  -InputFile .\Box_Collaboration_Sample_Data.csv `
-  -UserToProcess "user@contoso.com" `
-  -AuthMode Certificate `
-  -TenantId "<tenant-guid>" `
-  -ClientId "<app-guid>" `
-  -CertificateThumbprint "<thumbprint>" `
-  -Verbose
+$params = @{
+    InputFile            = '.\Box_Collaboration_Sample_Data.csv'
+    UserToProcess        = 'user@contoso.com'
+    TenantId             = '<tenant-guid>'
+    ClientId             = '<app-guid>'
+    CertificateThumbprint = '<thumbprint>'
+    Verbose              = $true
+}
+.\Update-UserFile.ps1 @params
 ```
 
 #### 3) Upload files and apply permissions
 
 ```powershell
-.\Update-UserFile.ps1 `
-  -UserToProcess "user@contoso.com" `
-  -UploadFiles `
-  -AuthMode Certificate `
-  -TenantId "<tenant-guid>" `
-  -ClientId "<app-guid>" `
-  -CertificateThumbprint "<thumbprint>" `
-  -Verbose
+$params = @{
+    UserToProcess        = 'user@contoso.com'
+    TenantId             = '<tenant-guid>'
+    ClientId             = '<app-guid>'
+    CertificateThumbprint = '<thumbprint>'
+    UploadFiles          = $true
+    Verbose              = $true
+}
+.\Update-UserFile.ps1 @params
 ```
 
 #### 4) Export results to CSV
 
 ```powershell
-.\Update-UserFile.ps1 `
-  -InputFile .\Box_Collaboration_Sample_Data.csv `
-  -UserToProcess "user@contoso.com" `
-  -AuthMode Interactive `
-  -TenantId "<tenant-guid>" `
-  -Verbose |
-Export-Csv -Path ".\permission_results.csv" -NoTypeInformation
+$params = @{
+    InputFile            = '.\Box_Collaboration_Sample_Data.csv'
+    UserToProcess        = 'user@contoso.com'
+    TenantId             = '<tenant-guid>'
+    ClientId             = '<app-guid>'
+    CertificateThumbprint = '<thumbprint>'
+    Verbose              = $true
+}
+.\Update-UserFile.ps1 @params | Export-Csv -Path '.\permission_results.csv' -NoTypeInformation
 ```
 
 #### 5) Process multiple users via pipeline
 
 ```powershell
-"user1@contoso.com", "user2@contoso.com" |
-  .\Update-UserFile.ps1 `
-    -InputFile .\Box_Collaboration_Sample_Data.csv `
-    -AuthMode Certificate `
-    -TenantId "<tenant-guid>" `
-    -ClientId "<app-guid>" `
-    -CertificateThumbprint "<thumbprint>" `
-    -Verbose
+$params = @{
+    InputFile            = '.\Box_Collaboration_Sample_Data.csv'
+    TenantId             = '<tenant-guid>'
+    ClientId             = '<app-guid>'
+    CertificateThumbprint = '<thumbprint>'
+    Verbose              = $true
+}
+'user1@contoso.com', 'user2@contoso.com' | .\Update-UserFile.ps1 @params
 ```
 
-Or derive users directly from the CSV:
+#### 6) Process all users in the CSV
 
 ```powershell
-Import-Csv .\Box_Collaboration_Sample_Data.csv |
-  Select-Object -ExpandProperty "Owner Login" -Unique |
-  Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-  .\Update-UserFile.ps1 `
-    -InputFile .\Box_Collaboration_Sample_Data.csv `
-    -AuthMode Interactive `
-    -TenantId "<tenant-guid>" `
-    -Verbose
+$params = @{
+    InputFile            = '.\Box_Collaboration_Sample_Data.csv'
+    TenantId             = '<tenant-guid>'
+    ClientId             = '<app-guid>'
+    CertificateThumbprint = '<thumbprint>'
+    Verbose              = $true
+}
+.\Update-UserFile.ps1 @params
 ```
 
 ### File upload

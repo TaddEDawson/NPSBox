@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.1.0.0
+    Version: 1.2.0.0
     Date:    2026-04-20
 
 .DESCRIPTION
@@ -79,13 +79,6 @@
     When omitted or empty, all unique owners in the CSV are processed.
     Accepts pipeline input so you can pipe a list of users.
     https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_pipelines
-
-.PARAMETER AuthMode
-    How to authenticate to Microsoft Graph.
-    Currently only Certificate (app-only) auth is supported.
-    Certificate auth uses a certificate for unattended/app-only auth — required
-    for accessing other users' OneDrive drives across the tenant.
-    https://learn.microsoft.com/powershell/microsoftgraph/authentication-commands
 
 .PARAMETER TenantId
     Your Microsoft 365 tenant ID (a GUID).
