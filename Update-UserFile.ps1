@@ -184,7 +184,7 @@ param
     ,
     # Certificate thumbprint for app-only auth.
     [Parameter(Mandatory = $true)]
-    [string] $CertificateThumbprint
+    [string] $CertificateThumbprint = "9D0F9B62AC3B002E56C2A304E88AD429813E55E2"
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
     [Parameter()]
