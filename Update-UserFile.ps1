@@ -17,8 +17,7 @@
     equivalent sharing permissions on the corresponding OneDrive items.
 
     HOW IT WORKS (step by step):
-      1. Authenticates to Microsoft Graph (interactive browser sign-in or
-         certificate-based app-only auth).
+      1. Authenticates to Microsoft Graph using certificate-based app-only auth.
       2. Reads the CSV and identifies unique owners to process.
          If -UserToProcess is specified, only that user is processed;
          otherwise all unique owners in the CSV are processed.
@@ -53,10 +52,10 @@
           Install-Module Microsoft.Graph.Files           -Scope CurrentUser
         https://learn.microsoft.com/powershell/microsoftgraph/installation
       - An Azure AD App Registration with the following APPLICATION permissions
-        (if using Certificate auth) or DELEGATED permissions (if Interactive):
-          Files.ReadWrite.All, User.Read.All
+        granted with admin consent:
+          Files.ReadWrite.All
         https://learn.microsoft.com/entra/identity-platform/quickstart-register-app
-      - For Certificate auth: a certificate uploaded to the app registration
+      - A certificate uploaded to the app registration
         https://learn.microsoft.com/entra/identity-platform/certificate-credentials
 
     SAFETY:
@@ -82,17 +81,16 @@
     https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_pipelines
 
 .PARAMETER AuthMode
-    How to authenticate to Microsoft Graph:
-      Interactive  : Opens a browser window for you to sign in (delegated permissions).
-                     Best for testing or one-off runs.
-      Certificate  : Uses a certificate for unattended/app-only auth.
-                     Required for automated/scheduled runs.
+    How to authenticate to Microsoft Graph.
+    Currently only Certificate (app-only) auth is supported.
+    Certificate auth uses a certificate for unattended/app-only auth — required
+    for accessing other users' OneDrive drives across the tenant.
     https://learn.microsoft.com/powershell/microsoftgraph/authentication-commands
 
 .PARAMETER TenantId
     Your Microsoft 365 tenant ID (a GUID).
     Find it in Azure Portal > Microsoft Entra ID > Overview > Tenant ID.
-    Required for both Interactive and Certificate auth to target the correct tenant.
+    Required for certificate auth to target the correct tenant.
     https://learn.microsoft.com/entra/fundamentals/how-to-find-tenant
 
 .PARAMETER ClientId
@@ -103,24 +101,9 @@
 
 .PARAMETER CertificateThumbprint
     The SHA-1 thumbprint of a certificate installed in Cert:\CurrentUser\My.
-    Used for Certificate auth. Alternative to -CertificatePath.
+    Required for authentication.
     To find your thumbprint:  Get-ChildItem Cert:\CurrentUser\My
     https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/connect-mggraph#example-2-using-a-certificate-thumbprint
-
-.PARAMETER CertificatePath
-    Path to a .pfx certificate file on disk.
-    Alternative to -CertificateThumbprint when the cert is not in the store.
-
-.PARAMETER CertificatePassword
-    SecureString password for the .pfx file, if it is password-protected.
-    Create one with:  ConvertTo-SecureString 'mypassword' -AsPlainText -Force
-    https://learn.microsoft.com/powershell/module/microsoft.powershell.security/convertto-securestring
-
-.PARAMETER Scopes
-    Permission scopes requested during Interactive auth.
-    Defaults to 'Files.ReadWrite.All'.
-    Scopes define what the script is allowed to do on behalf of the signed-in user.
-    https://learn.microsoft.com/graph/permissions-overview
 
 .PARAMETER LogFolder
     Folder where timestamped log files are written.
@@ -140,18 +123,16 @@
     https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_switch
 
 .EXAMPLE
-    # Preview what would happen (no changes made) using interactive browser auth:
-    .\Update-UserFile.ps1 -InputFile .\Box.csv -UserToProcess user@contoso.com -AuthMode Interactive -Verbose -WhatIf
+    # Preview what would happen (no changes made):
+    .\Update-UserFile.ps1 -InputFile .\Box.csv -UserToProcess user@contoso.com -Verbose -WhatIf
 
 .EXAMPLE
-    # Apply permissions using certificate auth (unattended):
-    .\Update-UserFile.ps1 -InputFile .\Box.csv -UserToProcess user@contoso.com -AuthMode Certificate `
-      -TenantId <tenant-guid> -ClientId <app-guid> -CertificateThumbprint <thumbprint> -Verbose
+    # Apply permissions for a specific user:
+    .\Update-UserFile.ps1 -InputFile .\Box.csv -UserToProcess user@contoso.com -Verbose
 
 .EXAMPLE
-    # Upload local files and preview permission grants:
-    .\Update-UserFile.ps1 -UserToProcess user@contoso.com -UploadFiles -AuthMode Certificate `
-      -TenantId <tenant-guid> -ClientId <app-guid> -CertificateThumbprint <thumbprint> -Verbose -WhatIf
+    # Upload local files and apply permissions for all users in the CSV:
+    .\Update-UserFile.ps1 -UploadFiles -Verbose
 
 .NOTES
     DOCUMENTATION LINKS:
@@ -200,13 +181,6 @@ param
     [Alias('Owner Login', 'User', 'UPN', 'Account')]
     [string] $UserToProcess
     ,
-    # How to authenticate — see .DESCRIPTION for details on each mode.
-    # ValidateSet restricts input to the listed values and enables tab-completion.
-    # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_parameters#validateset-attribute
-    [Parameter()]
-    [ValidateSet('Interactive', 'Certificate')]
-    [string] $AuthMode = 'Interactive'
-    ,
     # Your tenant ID (GUID).  Find it: Azure Portal > Entra ID > Overview.
     [Parameter()]
     [string] $TenantId = "92075952-90f3-4613-833b-d2e19ec649e4"
@@ -215,25 +189,9 @@ param
     [Parameter()]
     [string] $ClientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
     ,
-    # Certificate thumbprint for app-only auth.  Mutually exclusive with CertificatePath.
-    [Parameter()]
+    # Certificate thumbprint for app-only auth.
+    [Parameter(Mandatory = $true)]
     [string] $CertificateThumbprint
-    ,
-    # Path to a .pfx file for app-only auth.  Alternative to CertificateThumbprint.
-    [Parameter()]
-    [string] $CertificatePath
-    ,
-    # Password for the .pfx file (if it has one).  Must be a SecureString.
-    [Parameter()]
-    [securestring] $CertificatePassword
-    ,
-    # Permission scopes requested during Interactive auth.
-    # Graph scopes control what the app is allowed to do.
-    # https://learn.microsoft.com/graph/permissions-reference
-    [Parameter()]
-    [string[]] $Scopes = @(
-        'Files.ReadWrite.All'
-    )
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
     [Parameter()]
@@ -561,11 +519,7 @@ begin
     } # function Invoke-WithGraphRetry
 
     # ── Connect-Graph ────────────────────────────────────────────────────────────
-    # Authenticates to Microsoft Graph using the selected AuthMode.
-    #
-    # Interactive mode opens a browser window where you sign in with your
-    # Microsoft 365 account.  The token grants "delegated" permissions (the app
-    # acts on behalf of the signed-in user).
+    # Authenticates to Microsoft Graph using certificate-based app-only auth.
     #
     # Certificate mode uses a certificate for "app-only" auth — no user sign-in
     # is required.  This is how you run the script unattended (e.g. scheduled).
@@ -593,59 +547,23 @@ begin
             $existingContext = Get-MgContext -ErrorAction SilentlyContinue
             if ($null -ne $existingContext -and $existingContext.TenantId -eq $TenantId)
             {
-                # Verify the existing session has all the scopes the caller requires.
-                $missingScopes = $Scopes | Where-Object { $_ -notin $existingContext.Scopes }
-                if ($missingScopes.Count -gt 0)
-                {
-                    Write-LogLine -Message ("Existing Graph context is missing required scopes: {0}. Re-authenticating." -f ($missingScopes -join ', '))
-                } # if
-                else
-                {
-                    Write-LogLine -Message ("Reusing existing Microsoft Graph context. TenantId={0}, AppName={1}, AuthType={2}" -f
-                        $existingContext.TenantId, $existingContext.AppName, $existingContext.AuthType)
-                    return
-                } # else
+                Write-LogLine -Message ("Reusing existing Microsoft Graph context (app-only). TenantId={0}, AppName={1}, AuthType={2}" -f
+                    $existingContext.TenantId, $existingContext.AppName, $existingContext.AuthType)
+                return
             } # if
 
             if ([string]::IsNullOrWhiteSpace($TenantId))
             {
-                throw "AuthMode '$AuthMode' requires -TenantId."
-            } # if
-
-            if ($AuthMode -eq 'Interactive')
-            {
-                Write-LogLine -Message ("Connecting to Microsoft Graph using Interactive auth. TenantId={0}, Scopes={1}" -f $TenantId, ($Scopes -join ', '))
-                Connect-MgGraph -TenantId $TenantId -Scopes $Scopes -ErrorAction Stop -NoWelcome | Out-Null
-                return
+                throw "Certificate auth requires -TenantId."
             } # if
 
             if ([string]::IsNullOrWhiteSpace($ClientId))
             {
-                throw "AuthMode 'Certificate' requires -ClientId."
+                throw "Certificate auth requires -ClientId."
             } # if
 
-            if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint))
-            {
-                Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate thumbprint auth. TenantId={0}, ClientId={1}" -f $TenantId, $ClientId)
-                Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -ErrorAction Stop -NoWelcome | Out-Null
-                return
-            } # if
-
-            if ([string]::IsNullOrWhiteSpace($CertificatePath))
-            {
-                throw "AuthMode 'Certificate' requires -CertificateThumbprint or -CertificatePath."
-            } # if
-
-            Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate path auth. TenantId={0}, ClientId={1}, CertificatePath={2}" -f $TenantId, $ClientId, $CertificatePath)
-
-            if ($null -ne $CertificatePassword)
-            {
-                Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificatePath $CertificatePath -CertificatePassword $CertificatePassword -ErrorAction Stop -NoWelcome | Out-Null
-            } # if
-            else
-            {
-                Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificatePath $CertificatePath -ErrorAction Stop -NoWelcome | Out-Null
-            } # else
+            Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate thumbprint auth. TenantId={0}, ClientId={1}" -f $TenantId, $ClientId)
+            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -ErrorAction Stop -NoWelcome | Out-Null
         } # try
         finally
         {

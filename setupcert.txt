@@ -1,0 +1,10 @@
+App ID (ClientId): 98454154-dff8-44fd-8ec2-02fdf7da2015
+Object ID:         8da138bd-0e16-4127-bce0-940acce59370
+
+$cert.Thumbprint
+9D0F9B62AC3B002E56C2A304E88AD429813E55E2
+Service Principal ID: 727b31e0-fa6f-4a91-b3e7-402aaf40dea8
+
+
+PS C:\Users\tadd\AppData\Local\Temp> $TenantId                                                                                                                                
+92075952-90f3-4613-833b-d2e19ec649e4

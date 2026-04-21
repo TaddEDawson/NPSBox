@@ -24,6 +24,7 @@ Describe 'Update-UserFile.ps1' {
         $script:DefaultCollaborator = 'collab@contoso.com'
         $script:DefaultDriveId = 'b!-kIQeRjLDEyVXvh98xyWkBx6vWyJBJhFr5H_U3K6v7bkHqmOKs-hRpYN8L-rk6HJ'
         $script:DefaultWebUrl = 'https://contoso-my.sharepoint.com/personal/user_contoso_onmicrosoft_com'
+        $script:DefaultThumbprint = 'AABBCCDDEE1122334455AABBCCDDEE1122334455'
 
         # Create stubs for script-internal functions that will be mocked.
         # These do not exist until the script is dot-sourced, but Pester needs
@@ -127,7 +128,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should map Editor permission to write role' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $editorResult = $results | Where-Object { $_.ItemName -eq 'Doc1.txt' }
@@ -139,7 +140,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should map Viewer permission to read role' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $viewerResult = $results | Where-Object { $_.ItemName -eq 'Doc2.txt' }
@@ -151,7 +152,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should map Co-owner permission to write role' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $coOwnerResult = $results | Where-Object { $_.ItemName -eq 'Doc4.txt' }
@@ -163,7 +164,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should skip Previewer permission (maps to null)' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $previewerResult = $results | Where-Object { $_.ItemName -eq 'Doc3.txt' }
@@ -175,7 +176,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should fail when collaborator login is empty' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $failResult = $results | Where-Object { $_.ItemName -eq 'Doc5.txt' }
@@ -220,7 +221,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should normalize All Files prefix in paths' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'File.txt' }
@@ -230,7 +231,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should handle paths with spaces' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'Report.pdf' }
@@ -241,7 +242,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should handle paths with parentheses' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'Thesis.docx' }
@@ -252,7 +253,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should convert backslashes to forward slashes' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'Data.xlsx' }
@@ -295,7 +296,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should output custom objects with all required properties' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Select-Object -First 1
@@ -318,7 +319,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should support -WhatIf parameter' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -WhatIf -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -WhatIf -Verbose:$false
             } 6>&1
 
             $results | Should -Not -BeNullOrEmpty
@@ -328,7 +329,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should create log file in specified folder' {
             $null = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $logFiles = Get-ChildItem -Path $script:LogFolder -Filter '*.log'
@@ -340,7 +341,7 @@ Describe 'Update-UserFile.ps1' {
             $newLogFolder = Join-Path -Path $TestDrive -ChildPath 'new_logs_output'
             $null = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $newLogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $newLogFolder -Verbose:$false
             } 6>&1
 
             $newLogFolder | Should -Exist
@@ -362,7 +363,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should throw when InputFile does not exist' {
             { & {
                 . $script:ScriptUnderTest -InputFile 'nonexistent.csv' -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } } | Should -Throw
         }
 
@@ -376,7 +377,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results | Should -Not -BeNullOrEmpty
@@ -404,7 +405,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].ExistsInOneDrive | Should -Be $false
@@ -448,7 +449,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should process multiple rows and apply permissions' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'adile@contoso.com' `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results.Count | Should -Be 2
@@ -461,7 +462,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should apply correct roles for different permission levels' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'adile@contoso.com' `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].GraphRole | Should -Be 'write'
@@ -471,7 +472,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should disconnect from Graph after processing' {
             $null = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'adile@contoso.com' `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             Assert-MockCalled -CommandName 'Disconnect-MgGraph' -Scope It
@@ -512,7 +513,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should process all unique owners when UserToProcess is not specified' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results.Count | Should -Be 2
@@ -523,7 +524,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should apply correct roles per owner when processing all users' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $owner1Result = $results | Where-Object { $_.OwnerLogin -eq 'owner1@contoso.com' }
@@ -546,7 +547,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results.Count | Should -Be 2
@@ -562,7 +563,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should filter to single owner when UserToProcess is specified' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'owner2@contoso.com' `
-                    -AuthMode Interactive -LogFolder $script:LogFolder -Verbose:$false
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results.Count | Should -Be 1
@@ -613,7 +614,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should upload files and create folders' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -Verbose:$false
             } 6>&1
 
@@ -633,7 +634,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should list files that would be uploaded with -WhatIf' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -WhatIf -Verbose:$false
             } 6>&1
 
@@ -645,7 +646,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should output upload result objects with expected properties' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -Verbose:$false
             } 6>&1
 
@@ -666,7 +667,7 @@ Describe 'Update-UserFile.ps1' {
 
             { & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $emptyRoot -UploadFiles -Verbose:$false
             } } | Should -Throw '*not found*'
         }
@@ -674,7 +675,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should not upload when UploadFiles is not specified' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -AuthMode Interactive -LogFolder $script:LogFolder `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $script:LocalFilesRoot -Verbose:$false
             } 6>&1
 
