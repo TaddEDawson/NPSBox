@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.7
+    Version: 1.2.0.8
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -1015,17 +1015,19 @@ process
     } # if
 
     # Get unique owner UPNs from the CSV rows.
-    # Select-Object -Unique returns distinct values.
-    # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/select-object
-    $uniqueOwners = @($allRows |
-        ForEach-Object { $_.'Owner Login' } |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        Select-Object -Unique)
+    # Group-Object builds a hashtable in a single pass — O(n) instead of O(n²)
+    # from repeated Where-Object calls per owner.
+    # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/group-object
+    $ownerGroups = $allRows |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_.'Owner Login') } |
+        Group-Object -Property 'Owner Login' -AsHashTable -AsString
 
-    if ($uniqueOwners.Count -eq 0)
+    if ($null -eq $ownerGroups -or $ownerGroups.Count -eq 0)
     {
         throw "Owner Login is empty in all CSV rows."
     } # if
+
+    $uniqueOwners = @($ownerGroups.Keys)
 
     Write-LogLine -Message ("Processing {0} unique owner(s): {1}" -f $uniqueOwners.Count, ($uniqueOwners -join ', '))
 
@@ -1034,8 +1036,19 @@ process
     {
         Write-LogLine -Message ("── Begin processing owner: {0} ──" -f $ownerUpn)
 
-        # Filter rows for this owner.
-        $rows = $allRows | Where-Object { $_.'Owner Login' -eq $ownerUpn }
+        # Retrieve pre-grouped rows for this owner and deduplicate.
+        # Duplicate rows (same Owner + Path + Item Name + Collaborator Login)
+        # waste API calls; the invite API is idempotent but we skip duplicates
+        # to reduce noise and throttling risk.
+        $ownerRows = $ownerGroups[$ownerUpn]
+        $deduplicatedRows = @($ownerRows |
+            Sort-Object -Property 'Path', 'Item Name', 'Collaborator Login', 'Collaborator Permission' -Unique)
+        $duplicateCount = $ownerRows.Count - $deduplicatedRows.Count
+        if ($duplicateCount -gt 0)
+        {
+            Write-LogLine -Level 'WARN' -Message ("Removed {0} duplicate CSV row(s) for owner '{1}'." -f $duplicateCount, $ownerUpn)
+        } # if
+        $rows = $deduplicatedRows
 
         # Look up and validate the user's OneDrive drive.
         # Wrapped in try/catch so one failing user does not stop others.

@@ -919,4 +919,66 @@ Describe 'Update-UserFile.ps1' {
             Assert-MockCalled -CommandName 'Start-Sleep' -Times 5 -Scope It
         }
     }
+
+    Context 'Script Execution - CSV Deduplication' {
+        BeforeEach {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_dedup.csv'
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_dedup'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
+            }
+        }
+
+        It 'should deduplicate identical CSV rows and process each unique row once' {
+            # Three identical rows — only one should produce an invite call
+            $rows = @(
+                (New-CsvRow -ItemName 'Same.txt' -CollaboratorLogin 'collab@contoso.com' -CollaboratorPermission 'Editor'),
+                (New-CsvRow -ItemName 'Same.txt' -CollaboratorLogin 'collab@contoso.com' -CollaboratorPermission 'Editor'),
+                (New-CsvRow -ItemName 'Same.txt' -CollaboratorLogin 'collab@contoso.com' -CollaboratorPermission 'Editor')
+            )
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            # After deduplication, only 1 result should be produced
+            $permResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'ItemName' -and $_.ItemName -eq 'Same.txt' }
+            $permResults.Count | Should -Be 1
+            $permResults[0].Status | Should -Be 'Applied'
+        }
+
+        It 'should keep distinct rows with different collaborators' {
+            $rows = @(
+                (New-CsvRow -ItemName 'Doc.txt' -CollaboratorLogin 'alice@contoso.com' -CollaboratorPermission 'Editor'),
+                (New-CsvRow -ItemName 'Doc.txt' -CollaboratorLogin 'bob@contoso.com' -CollaboratorPermission 'Viewer')
+            )
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $permResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'ItemName' -and $_.ItemName -eq 'Doc.txt' }
+            $permResults.Count | Should -Be 2
+        }
+    }
 }
