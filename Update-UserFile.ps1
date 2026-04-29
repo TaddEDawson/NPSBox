@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.4
+    Version: 1.2.0.5
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -953,6 +953,14 @@ begin
     Assert-GraphAssemblyCompatibility   # Check for PnP.PowerShell conflicts
     Assert-RequiredModules              # Import Graph SDK modules
     Connect-Graph                       # Authenticate to Microsoft Graph
+
+    # Cache the CSV data once in the begin block so piping multiple UPNs does
+    # not re-read and re-parse the file for each pipeline input.
+    $script:CachedCsvRows = $null
+    if ($InputFile.Exists)
+    {
+        $script:CachedCsvRows = Import-Csv -LiteralPath $InputFile.FullName
+    } # if
 } # begin
 
 # ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -970,10 +978,8 @@ process
         throw "InputFile not found: $($InputFile.FullName)"
     } # if
 
-    # Import-Csv reads a CSV file and converts each row into a PowerShell object.
-    # Column headers become property names (e.g. $row.'Owner Login').
-    # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/import-csv
-    $allRows = Import-Csv -LiteralPath $InputFile.FullName
+    # Use the CSV data cached in the begin block to avoid re-reading per pipeline input.
+    $allRows = $script:CachedCsvRows
 
     # Filter to only the rows belonging to this user when specified.
     # Where-Object filters objects in the pipeline based on a condition.
