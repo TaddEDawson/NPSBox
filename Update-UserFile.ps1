@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.8
+    Version: 1.2.0.9
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -864,9 +864,16 @@ begin
 
     # ── Get-ValidatedUserDrive ────────────────────────────────────────────────────
     # Looks up a user's OneDrive drive via Microsoft Graph, validates the response,
-    # and confirms the drive root is accessible.  Returns the drive object with
-    # .Id (the driveId used in all subsequent API calls) and .WebUrl.
+    # and confirms the drive root is accessible.  Returns a custom object with the
+    # drive info plus account/provisioning status flags.
     #
+    # Steps:
+    #   1. Verify the user account exists and is enabled via Get-MgUser.
+    #   2. Resolve the user's OneDrive drive via Get-MgUserDrive.
+    #   3. Validate the drive root is accessible.
+    #
+    # Uses Get-MgUser from the Microsoft.Graph.Users module:
+    #   https://learn.microsoft.com/powershell/module/microsoft.graph.users/get-mguser
     # Uses Get-MgUserDrive from the Microsoft.Graph.Files module:
     #   https://learn.microsoft.com/powershell/module/microsoft.graph.files/get-mguserdrive
     #
@@ -881,7 +888,44 @@ begin
             [string] $UserPrincipalName
         )
 
+        # ── Step 1: Validate the user account ────────────────────────────────
+        # https://learn.microsoft.com/powershell/module/microsoft.graph.users/get-mguser
+        Write-LogLine -Message ("Validating user account: {0}" -f $UserPrincipalName)
+        $userAccount = $null
+        try
+        {
+            $userAccount = Invoke-WithGraphRetry -OperationName ("Get-MgUser for '{0}'" -f $UserPrincipalName) -Operation {
+                Get-MgUser -UserId $UserPrincipalName -Property Id, DisplayName, UserPrincipalName, AccountEnabled -ErrorAction Stop
+            } # inline:$userAccount = Invoke-WithGraphRetry
+        } # try
+        catch
+        {
+            throw (
+                "User account '{0}' could not be found in the tenant. " +
+                "Verify the UPN is correct and the account exists in Microsoft Entra ID. " +
+                "Original error: {1}" -f $UserPrincipalName, $_.Exception.Message
+            )
+        } # catch
+
+        if ($null -eq $userAccount)
+        {
+            throw ("Get-MgUser returned null for '{0}'." -f $UserPrincipalName)
+        } # if
+
+        if ($userAccount.AccountEnabled -eq $false)
+        {
+            throw (
+                "User account '{0}' (DisplayName='{1}') is disabled in Microsoft Entra ID. " +
+                "Enable the account before running the migration." -f $UserPrincipalName, $userAccount.DisplayName
+            )
+        } # if
+
+        Write-LogLine -Message ("User account validated: {0} (DisplayName='{1}', Enabled={2})" -f
+            $UserPrincipalName, $userAccount.DisplayName, $userAccount.AccountEnabled)
+
+        # ── Step 2: Resolve the user's OneDrive drive ────────────────────────
         Write-LogLine -Message ("Resolving OneDrive drive for owner: {0}" -f $UserPrincipalName)
+        $userDrive = $null
         try
         {
             $userDrive = Invoke-WithGraphRetry -OperationName ("Get-MgUserDrive for '{0}'" -f $UserPrincipalName) -Operation {
@@ -891,13 +935,16 @@ begin
         catch
         {
             $errMsg = $_.Exception.Message
-            # Detect common provisioning-related errors and provide actionable guidance.
-            if ($errMsg -match '404|ResourceNotFound|not found|does not exist|no OneDrive')
+            # Detect provisioning-related errors and provide actionable guidance.
+            # Graph may return 404/ResourceNotFound when the drive doesn't exist,
+            # or accessDenied when the OneDrive site collection is not provisioned.
+            if ($errMsg -match '404|ResourceNotFound|not found|does not exist|no OneDrive|accessDenied|access denied')
             {
                 throw (
                     "OneDrive is not provisioned for user '{0}'. " +
-                    "Ensure the user has a license that includes OneDrive and has signed in at least once. " +
-                    "Provision manually: https://portal.office.com or via SharePoint admin PowerShell. " +
+                    "The user account exists but their OneDrive has not been created. " +
+                    "Provision via: Request-SPOPersonalSite -UserEmails '{0}' " +
+                    "or have the user sign in at https://portal.office.com. " +
                     "Original error: {1}" -f $UserPrincipalName, $errMsg
                 )
             } # if
@@ -930,6 +977,7 @@ begin
             )
         } # if
 
+        # ── Step 3: Validate the drive root is accessible ────────────────────
         $rootCheckUri = "https://graph.microsoft.com/v1.0/drives/$($userDrive.Id)/root?`$select=id,webUrl"
         $driveRoot = Invoke-WithGraphRetry -OperationName ("Resolve drive root for '{0}'" -f $UserPrincipalName) -Operation {
             Invoke-MgGraphRequest -Method GET -Uri $rootCheckUri -ErrorAction Stop
@@ -1059,6 +1107,12 @@ process
         catch
         {
             Write-LogLine -Level 'ERROR' -Message ("Failed to resolve OneDrive for '{0}': {1}. Skipping this owner." -f $ownerUpn, $_.Exception.Message)
+
+            # Determine which validation step failed for the status flags.
+            $errText = $_.Exception.Message
+            $isValid  = -not ($errText -match 'could not be found in the tenant|Get-MgUser returned null|is disabled')
+            $isDriveOk = $false
+
             foreach ($row in $rows)
             {
                 [pscustomobject]@{
@@ -1071,11 +1125,13 @@ process
                     GraphRole              = $null
                     DriveId                = $null
                     OneDriveWebUrl         = $null
+                    IsValidAccount         = $isValid
+                    OneDriveProvisioned    = $isDriveOk
                     ExistsInOneDrive       = $null
                     DriveItemId            = $null
                     Action                 = $null
                     Status                 = 'Failed'
-                    Error                  = $_.Exception.Message
+                    Error                  = $errText
                 } # inline:[pscustomobject]@{
             } # foreach
             continue
@@ -1116,6 +1172,8 @@ process
                 GraphRole              = $graphRole
                 DriveId                = $drive.Id
                 OneDriveWebUrl         = $drive.WebUrl
+                IsValidAccount         = $true
+                OneDriveProvisioned    = $true
                 ExistsInOneDrive       = $null
                 DriveItemId            = $null
                 Action                 = $null

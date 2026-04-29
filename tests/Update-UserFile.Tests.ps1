@@ -42,6 +42,7 @@ Describe 'Update-UserFile.ps1' {
         foreach ($cmdletName in @(
             'Disconnect-MgGraph',
             'Connect-MgGraph',
+            'Get-MgUser',
             'Get-MgUserDrive',
             'Invoke-MgGraphRequest',
             'Get-MgContext'
@@ -97,6 +98,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
 
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{
                     Id     = $script:DefaultDriveId
@@ -205,6 +209,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -280,6 +287,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -316,6 +326,19 @@ Describe 'Update-UserFile.ps1' {
             $result.PSObject.Properties.Name | Should -Contain 'Action'
             $result.PSObject.Properties.Name | Should -Contain 'Status'
             $result.PSObject.Properties.Name | Should -Contain 'Error'
+            $result.PSObject.Properties.Name | Should -Contain 'IsValidAccount'
+            $result.PSObject.Properties.Name | Should -Contain 'OneDriveProvisioned'
+        }
+
+        It 'should set IsValidAccount and OneDriveProvisioned to true on success' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Select-Object -First 1
+            $result.IsValidAccount | Should -Be $true
+            $result.OneDriveProvisioned | Should -Be $true
         }
 
         It 'should support -WhatIf parameter' {
@@ -373,6 +396,9 @@ Describe 'Update-UserFile.ps1' {
             $rows = @(New-CsvRow)
             $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
 
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 throw [System.Exception]::new('Drive not found')
             }
@@ -391,6 +417,9 @@ Describe 'Update-UserFile.ps1' {
             $rows = @(New-CsvRow)
             $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
 
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -418,6 +447,9 @@ Describe 'Update-UserFile.ps1' {
             $rows = @(New-CsvRow)
             $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
 
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 throw [System.Exception]::new('ResourceNotFound: the user does not exist or OneDrive is not provisioned')
             }
@@ -430,6 +462,69 @@ Describe 'Update-UserFile.ps1' {
             $results[0].Status | Should -Be 'Failed'
             $results[0].Error | Should -Match 'not provisioned'
             $results[0].Error | Should -Match 'portal\.office\.com'
+            $results[0].IsValidAccount | Should -Be $true
+            $results[0].OneDriveProvisioned | Should -Be $false
+        }
+
+        It 'should set IsValidAccount to false when user account is not found' {
+            $rows = @(New-CsvRow)
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                throw [System.Exception]::new('Request_ResourceNotFound: Resource not found')
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results[0].Status | Should -Be 'Failed'
+            $results[0].IsValidAccount | Should -Be $false
+            $results[0].OneDriveProvisioned | Should -Be $false
+            $results[0].Error | Should -Match 'could not be found'
+        }
+
+        It 'should set IsValidAccount to false when user account is disabled' {
+            $rows = @(New-CsvRow)
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Disabled User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $false }
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results[0].Status | Should -Be 'Failed'
+            $results[0].IsValidAccount | Should -Be $false
+            $results[0].OneDriveProvisioned | Should -Be $false
+            $results[0].Error | Should -Match 'disabled'
+        }
+
+        It 'should catch accessDenied as unprovisioned OneDrive' {
+            $rows = @(New-CsvRow)
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                throw [System.Exception]::new('[accessDenied] : Access denied')
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results[0].Status | Should -Be 'Failed'
+            $results[0].IsValidAccount | Should -Be $true
+            $results[0].OneDriveProvisioned | Should -Be $false
+            $results[0].Error | Should -Match 'not provisioned'
+            $results[0].Error | Should -Match 'Request-SPOPersonalSite'
         }
     }
 
@@ -449,6 +544,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -515,6 +613,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -557,6 +658,9 @@ Describe 'Update-UserFile.ps1' {
         }
 
         It 'should continue processing remaining owners when one fails' {
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 param($UserId)
                 if ($UserId -eq 'owner1@contoso.com') {
@@ -616,6 +720,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -743,6 +850,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -824,6 +934,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -930,6 +1043,9 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
             }
@@ -982,3 +1098,4 @@ Describe 'Update-UserFile.ps1' {
         }
     }
 }
+
