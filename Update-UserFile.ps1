@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.13
+    Version: 1.2.0.14
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -685,6 +685,38 @@ begin
 
             Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate thumbprint auth. TenantId={0}, ClientId={1}" -f $TenantId, $ClientId)
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -ErrorAction Stop -NoWelcome | Out-Null
+
+            # ── Post-connection validation ────────────────────────────────────
+            # Verify the resulting session is actually app-only and uses the
+            # expected ClientId.  If Connect-MgGraph silently fell back to
+            # delegated auth (e.g. certificate not found), the session will
+            # lack the required Application permissions.
+            $newContext = Get-MgContext -ErrorAction SilentlyContinue
+            if ($null -eq $newContext)
+            {
+                throw "Connect-MgGraph completed but Get-MgContext returned null. Authentication may have failed."
+            } # if
+
+            if ($newContext.AuthType -ne 'AppOnly')
+            {
+                throw (
+                    ("Expected app-only authentication but the session is '{0}' (ClientId={1}). " +
+                    "Verify that the certificate with thumbprint '{2}' is installed in Cert:\CurrentUser\My " +
+                    "and is associated with the app registration (ClientId={3}).") -f
+                    $newContext.AuthType, $newContext.ClientId, $CertificateThumbprint, $ClientId
+                )
+            } # if
+
+            if ($newContext.ClientId -ne $ClientId)
+            {
+                throw (
+                    ("Connected with ClientId '{0}' but expected '{1}'. " +
+                    "Disconnect any existing Graph sessions and retry.") -f
+                    $newContext.ClientId, $ClientId
+                )
+            } # if
+
+            Write-LogLine -Message ("Connected to Microsoft Graph (AppOnly). TenantId={0}, ClientId={1}" -f $newContext.TenantId, $newContext.ClientId)
         } # try
         finally
         {

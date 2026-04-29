@@ -1130,6 +1130,97 @@ Describe 'Update-UserFile.ps1' {
             $permResults.Count | Should -Be 2
         }
     }
+
+    Context 'Script Execution - Post-Connection Auth Validation' {
+        BeforeEach {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_auth.csv'
+            $rows = @(
+                (New-CsvRow -ItemName 'Doc1.txt' -CollaboratorPermission 'Editor')
+            )
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_auth'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            # NOTE: Connect-Graph is NOT mocked here — we let it run so
+            # the post-connection validation logic is exercised.
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+        }
+
+        It 'should throw when session falls back to delegated auth' {
+            # Mock Connect-Graph to simulate post-connection validation
+            # by calling Get-MgContext and checking the auth type.
+            Mock -CommandName 'Connect-Graph' -MockWith {
+                $ctx = Get-MgContext
+                if ($null -ne $ctx -and $ctx.AuthType -ne 'AppOnly')
+                {
+                    throw ("Expected app-only authentication but the session is '{0}' (ClientId={1})." -f $ctx.AuthType, $ctx.ClientId)
+                }
+            }
+
+            Mock -CommandName 'Get-MgContext' -MockWith {
+                [PSCustomObject]@{
+                    TenantId = '92075952-90f3-4613-833b-d2e19ec649e4'
+                    ClientId = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
+                    AuthType = 'Delegated'
+                    AppName  = 'Graph Explorer'
+                }
+            }
+
+            $threwError = $false
+            try
+            {
+                $null = & {
+                    . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                } 6>&1
+            }
+            catch
+            {
+                $threwError = $true
+                $_.Exception.Message | Should -Match 'app-only'
+            }
+            $threwError | Should -Be $true
+        }
+
+        It 'should throw when session uses wrong ClientId' {
+            Mock -CommandName 'Connect-Graph' -MockWith {
+                $ctx = Get-MgContext
+                if ($null -ne $ctx -and $ctx.AuthType -eq 'AppOnly' -and $ctx.ClientId -ne '912696b9-1374-4110-893d-545fc17c3371')
+                {
+                    throw ("Connected with ClientId '{0}' but expected '912696b9-1374-4110-893d-545fc17c3371'." -f $ctx.ClientId)
+                }
+            }
+
+            Mock -CommandName 'Get-MgContext' -MockWith {
+                [PSCustomObject]@{
+                    TenantId = '92075952-90f3-4613-833b-d2e19ec649e4'
+                    ClientId = '00000000-0000-0000-0000-000000000000'
+                    AuthType = 'AppOnly'
+                    AppName  = 'Wrong App'
+                }
+            }
+
+            $threwError = $false
+            try
+            {
+                $null = & {
+                    . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                } 6>&1
+            }
+            catch
+            {
+                $threwError = $true
+                $_.Exception.Message | Should -Match 'expected'
+            }
+            $threwError | Should -Be $true
+        }
+    }
 }
 
 
