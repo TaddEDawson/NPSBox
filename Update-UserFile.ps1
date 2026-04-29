@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.1
+    Version: 1.2.0.2
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -200,6 +200,13 @@ param
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_switch
     [Parameter()]
     [switch] $UploadFiles
+    ,
+    # Optional list of allowed email domains for collaborators.
+    # When specified, collaborators whose domain is not in this list are skipped
+    # with a warning instead of being granted access.  Prevents accidental
+    # external sharing.  Example: @('contoso.com', 'contoso.onmicrosoft.com')
+    [Parameter()]
+    [string[]] $AllowedDomains
 )
 
 # ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -335,6 +342,41 @@ begin
             default              { return $null   }   # Unknown — skip
         } # switch
     } # function ConvertTo-GraphRole
+
+    # ── Test-CollaboratorDomain ────────────────────────────────────────────────────
+    # Validates that a collaborator's email domain is in the AllowedDomains list.
+    # Returns $true if the domain is allowed (or if AllowedDomains is not set).
+    # Returns $false if the domain is blocked.
+    # This prevents accidental external sharing when the CSV contains addresses
+    # outside the organisation.
+    function Test-CollaboratorDomain
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $Email
+            ,
+            [Parameter()]
+            [string[]] $Domains
+        )
+
+        # If no domain allowlist was provided, all domains are permitted.
+        if ($null -eq $Domains -or $Domains.Count -eq 0)
+        {
+            return $true
+        } # if
+
+        $atIndex = $Email.LastIndexOf('@')
+        if ($atIndex -lt 0)
+        {
+            return $false
+        } # if
+
+        $emailDomain = $Email.Substring($atIndex + 1).ToLowerInvariant()
+        $lowerDomains = $Domains | ForEach-Object { $_.ToLowerInvariant() }
+        return ($emailDomain -in $lowerDomains)
+    } # function Test-CollaboratorDomain
 
     # ── ConvertTo-OneDriveRelativePath ────────────────────────────────────────────
     # Cleans up the Box export path so it can be used with the Graph API.
@@ -968,6 +1010,17 @@ process
                 if ([string]::IsNullOrWhiteSpace($collab))
                 {
                     throw "Collaborator Login is empty."
+                } # if
+
+                # Validate that the collaborator's domain is permitted.
+                if (-not (Test-CollaboratorDomain -Email $collab -Domains $AllowedDomains))
+                {
+                    $result.Action = 'Skipped'
+                    $result.Status = 'Skipped'
+                    $result.Error  = "Domain not in AllowedDomains list."
+                    Write-LogLine -Level 'WARN' -Message ("Skipping external collaborator '{0}' — domain not in AllowedDomains." -f $collab)
+                    $result
+                    continue
                 } # if
 
                 if ([string]::IsNullOrWhiteSpace($graphRole))

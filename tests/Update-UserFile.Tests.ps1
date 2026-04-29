@@ -683,4 +683,87 @@ Describe 'Update-UserFile.ps1' {
             $uploadResults | Should -BeNullOrEmpty
         }
     }
+
+    Context 'Script Execution - AllowedDomains Validation' {
+        BeforeEach {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_domains.csv'
+            $rows = @(
+                (New-CsvRow -ItemName 'Internal.txt' -CollaboratorLogin 'collab@contoso.onmicrosoft.com' -CollaboratorPermission 'Editor'),
+                (New-CsvRow -ItemName 'External.txt' -CollaboratorLogin 'outsider@gmail.com' -CollaboratorPermission 'Editor'),
+                (New-CsvRow -ItemName 'AlsoInternal.txt' -CollaboratorLogin 'other@contoso.com' -CollaboratorPermission 'Viewer')
+            )
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_domains'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
+            }
+        }
+
+        It 'should skip collaborators with domains not in AllowedDomains' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -AllowedDomains @('contoso.onmicrosoft.com', 'contoso.com') -Verbose:$false
+            } 6>&1
+
+            $external = $results | Where-Object { $_.ItemName -eq 'External.txt' }
+            $external.Status | Should -Be 'Skipped'
+            $external.Error | Should -Match 'AllowedDomains'
+        }
+
+        It 'should allow collaborators with domains in AllowedDomains' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -AllowedDomains @('contoso.onmicrosoft.com', 'contoso.com') -Verbose:$false
+            } 6>&1
+
+            $internal = $results | Where-Object { $_.ItemName -eq 'Internal.txt' }
+            $internal.Status | Should -Be 'Applied'
+
+            $alsoInternal = $results | Where-Object { $_.ItemName -eq 'AlsoInternal.txt' }
+            $alsoInternal.Status | Should -Be 'Applied'
+        }
+
+        It 'should allow all domains when AllowedDomains is not specified' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $external = $results | Where-Object { $_.ItemName -eq 'External.txt' }
+            $external.Status | Should -Be 'Applied'
+        }
+
+        It 'should perform case-insensitive domain matching' {
+            $singleRowCsv = Join-Path -Path $TestDrive -ChildPath 'test_domain_case.csv'
+            @(New-CsvRow -ItemName 'CaseTest.txt' -CollaboratorLogin 'user@CONTOSO.COM' -CollaboratorPermission 'Editor') |
+                Export-Csv -LiteralPath $singleRowCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $singleRowCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -AllowedDomains @('contoso.com') -Verbose:$false
+            } 6>&1
+
+            $results[0].Status | Should -Be 'Applied'
+        }
+    }
 }
