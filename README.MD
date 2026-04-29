@@ -53,8 +53,25 @@ Two approaches are provided:
 | `Box_Collaboration_Sample_Data.csv` | Sample CSV structure |
 | `DISCLAIMER.MD` | Disclaimer text |
 | `tests/` | Pester tests |
+| `tests/results/` | Pester test result output (NUnit XML) |
 | `releases/`, `logs/`, `LocalFiles/` | Local/release assets |
 | `alternatives/` | Alternative script implementations |
+| `.github/` | GitHub Copilot customization files (instructions, agents, prompts) |
+
+### `.github/` folder
+
+The `.github/` directory contains [VS Code / GitHub Copilot customization files](https://code.visualstudio.com/docs/copilot/copilot-customization) that tailor AI-assisted development to this project's conventions.
+
+| Path | Purpose |
+|---|---|
+| `.github/copilot-instructions.md` | **Global Copilot instructions** — loaded into every Copilot conversation for this repo. Defines the project role, key files, architecture notes, versioning convention, coding standards, API reference requirements, and validation workflow. |
+| `.github/instructions/csv-data.instructions.md` | **CSV data schema instructions** — applied automatically when editing `*.csv` files. Documents the `UserInfo.csv` / `Box_Collaboration_Sample_Data.csv` column schemas, Box-role-to-Graph-permission mapping, and path normalization conventions. |
+| `.github/instructions/pester-tests.instructions.md` | **Pester test instructions** — applied automatically when editing files under `tests/`. Covers Pester 5 test structure, the `New-CsvRow` helper, mocking conventions (all Graph/file-system calls are mocked), script invocation patterns, and assertion best practices. |
+| `.github/instructions/powershell.instructions.md` | **PowerShell coding standards** — applied automatically when editing `*.ps1` files. Enforces Allman-style braces, `SupportsShouldProcess`, `Write-LogLine` logging, pipeline output conventions, Graph API URL encoding, and error-handling patterns. |
+| `.github/agents/graph-api.agent.md` | **Graph API research agent** — a read-only specialist agent for researching Microsoft Graph REST endpoints, PowerShell SDK cmdlets, permissions, throttling, and error codes. Uses only official Microsoft documentation. |
+| `.github/prompts/add-graph-operation.prompt.md` | **Reusable prompt** — scaffolds a new Graph API operation in `Update-UserFile.ps1` with retry logic, URL encoding, `ShouldProcess` guards, logging, and matching Pester tests. |
+| `.github/prompts/run-tests.prompt.md` | **Reusable prompt** — runs the Pester 5 test suite and reports a pass/fail summary with failure details and fix suggestions. |
+| `.github/prompts/version-bump.prompt.md` | **Reusable prompt** — bumps the script version (revision, minor, or major) and date in the `.SYNOPSIS` block following the project's versioning convention. |
 
 ---
 

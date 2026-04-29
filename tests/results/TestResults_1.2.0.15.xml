@@ -1,0 +1,142 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<test-results xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="nunit_schema_2.5.xsd" name="Pester" total="57" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2026-04-29" time="16:26:10">
+  <environment machine-name="TADDSURFACE2024" platform="Microsoft Windows 11 Enterprise|C:\WINDOWS|\Device\Harddisk0\Partition3" os-version="10.0.26200" nunit-version="2.5.8.0" clr-version="9.0.14" user="tadd" user-domain="NORTHAMERICA" cwd="C:\Repos\NPSBox" />
+  <culture-info current-culture="en-US" current-uiculture="en-US" />
+  <test-suite type="TestFixture" name="Pester" executed="True" result="Success" success="True" time="38.6164" asserts="0" description="Pester">
+    <results>
+      <test-suite type="TestFixture" name="C:\Repos\NPSBox\tests\Test-AzureAppRegistration.Tests.ps1" executed="True" result="Success" success="True" time="5.63" asserts="0" description="C:\Repos\NPSBox\tests\Test-AzureAppRegistration.Tests.ps1">
+        <results>
+          <test-suite type="TestFixture" name="Test-AzureAppRegistration.ps1" executed="True" result="Success" success="True" time="4.4967" asserts="0" description="Test-AzureAppRegistration.ps1">
+            <results>
+              <test-suite type="TestFixture" name="Test-AzureAppRegistration.ps1.All Permissions Granted" executed="True" result="Success" success="True" time="1.6788" asserts="0" description="Test-AzureAppRegistration.ps1.All Permissions Granted">
+                <results>
+                  <test-case description="should output one result per required permission" name="Test-AzureAppRegistration.ps1.All Permissions Granted.should output one result per required permission" time="1.0674" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should mark all permissions as granted" name="Test-AzureAppRegistration.ps1.All Permissions Granted.should mark all permissions as granted" time="0.1263" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should include all expected output properties" name="Test-AzureAppRegistration.ps1.All Permissions Granted.should include all expected output properties" time="0.0724" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should set Type to Application for all results" name="Test-AzureAppRegistration.ps1.All Permissions Granted.should set Type to Application for all results" time="0.0933" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should populate AppId and TenantId from parameters" name="Test-AzureAppRegistration.ps1.All Permissions Granted.should populate AppId and TenantId from parameters" time="0.0989" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should populate DisplayName from the service principal" name="Test-AzureAppRegistration.ps1.All Permissions Granted.should populate DisplayName from the service principal" time="0.0996" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Test-AzureAppRegistration.ps1.Missing Permissions" executed="True" result="Success" success="True" time="1.9474" asserts="0" description="Test-AzureAppRegistration.ps1.Missing Permissions">
+                <results>
+                  <test-case description="should mark Files.ReadWrite.All as granted" name="Test-AzureAppRegistration.ps1.Missing Permissions.should mark Files.ReadWrite.All as granted" time="0.167" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should mark User.Read.All as not granted" name="Test-AzureAppRegistration.ps1.Missing Permissions.should mark User.Read.All as not granted" time="0.0913" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Test-AzureAppRegistration.ps1.No Permissions Granted" executed="True" result="Success" success="True" time="2.1092" asserts="0" description="Test-AzureAppRegistration.ps1.No Permissions Granted">
+                <results>
+                  <test-case description="should mark all permissions as not granted" name="Test-AzureAppRegistration.ps1.No Permissions Granted.should mark all permissions as not granted" time="0.1576" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Test-AzureAppRegistration.ps1.Error Handling" executed="True" result="Success" success="True" time="2.4696" asserts="0" description="Test-AzureAppRegistration.ps1.Error Handling">
+                <results>
+                  <test-case description="should throw when service principal is not found" name="Test-AzureAppRegistration.ps1.Error Handling.should throw when service principal is not found" time="0.1467" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should disconnect from Graph after processing" name="Test-AzureAppRegistration.ps1.Error Handling.should disconnect from Graph after processing" time="0.2051" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+            </results>
+          </test-suite>
+        </results>
+      </test-suite>
+      <test-suite type="TestFixture" name="C:\Repos\NPSBox\tests\Update-UserFile.Tests.ps1" executed="True" result="Success" success="True" time="32.9864" asserts="0" description="C:\Repos\NPSBox\tests\Update-UserFile.Tests.ps1">
+        <results>
+          <test-suite type="TestFixture" name="Update-UserFile.ps1" executed="True" result="Success" success="True" time="32.8252" asserts="0" description="Update-UserFile.ps1">
+            <results>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - Permission Mapping" executed="True" result="Success" success="True" time="2.4405" asserts="0" description="Update-UserFile.ps1.Script Execution - Permission Mapping">
+                <results>
+                  <test-case description="should map Editor permission to write role" name="Update-UserFile.ps1.Script Execution - Permission Mapping.should map Editor permission to write role" time="0.7168" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should map Viewer permission to read role" name="Update-UserFile.ps1.Script Execution - Permission Mapping.should map Viewer permission to read role" time="0.4435" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should map Co-owner permission to write role" name="Update-UserFile.ps1.Script Execution - Permission Mapping.should map Co-owner permission to write role" time="0.4198" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should skip Previewer permission (maps to null)" name="Update-UserFile.ps1.Script Execution - Permission Mapping.should skip Previewer permission (maps to null)" time="0.4284" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should fail when collaborator login is empty" name="Update-UserFile.ps1.Script Execution - Permission Mapping.should fail when collaborator login is empty" time="0.4044" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - Path Handling" executed="True" result="Success" success="True" time="4.1765" asserts="0" description="Update-UserFile.ps1.Script Execution - Path Handling">
+                <results>
+                  <test-case description="should normalize All Files prefix in paths" name="Update-UserFile.ps1.Script Execution - Path Handling.should normalize All Files prefix in paths" time="0.4512" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should handle paths with spaces" name="Update-UserFile.ps1.Script Execution - Path Handling.should handle paths with spaces" time="0.4328" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should handle paths with parentheses" name="Update-UserFile.ps1.Script Execution - Path Handling.should handle paths with parentheses" time="0.4289" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should convert backslashes to forward slashes" name="Update-UserFile.ps1.Script Execution - Path Handling.should convert backslashes to forward slashes" time="0.4045" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - Parameters and Output" executed="True" result="Success" success="True" time="5.7671" asserts="0" description="Update-UserFile.ps1.Script Execution - Parameters and Output">
+                <results>
+                  <test-case description="should output custom objects with all required properties" name="Update-UserFile.ps1.Script Execution - Parameters and Output.should output custom objects with all required properties" time="0.3163" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should set IsValidAccount and OneDriveProvisioned to true on success" name="Update-UserFile.ps1.Script Execution - Parameters and Output.should set IsValidAccount and OneDriveProvisioned to true on success" time="0.3125" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should support -WhatIf parameter" name="Update-UserFile.ps1.Script Execution - Parameters and Output.should support -WhatIf parameter" time="0.2696" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should create log file in specified folder" name="Update-UserFile.ps1.Script Execution - Parameters and Output.should create log file in specified folder" time="0.3216" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should create log folder if it does not exist" name="Update-UserFile.ps1.Script Execution - Parameters and Output.should create log folder if it does not exist" time="0.3385" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - Error Handling" executed="True" result="Success" success="True" time="7.2883" asserts="0" description="Update-UserFile.ps1.Script Execution - Error Handling">
+                <results>
+                  <test-case description="should throw when InputFile does not exist" name="Update-UserFile.ps1.Script Execution - Error Handling.should throw when InputFile does not exist" time="0.0744" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should output Failed results when drive lookup fails for a user" name="Update-UserFile.ps1.Script Execution - Error Handling.should output Failed results when drive lookup fails for a user" time="0.2255" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should mark item as not existing when 404 error occurs" name="Update-UserFile.ps1.Script Execution - Error Handling.should mark item as not existing when 404 error occurs" time="0.3011" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should provide actionable error when OneDrive is not provisioned" name="Update-UserFile.ps1.Script Execution - Error Handling.should provide actionable error when OneDrive is not provisioned" time="0.2111" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should set IsValidAccount to false when user account is not found" name="Update-UserFile.ps1.Script Execution - Error Handling.should set IsValidAccount to false when user account is not found" time="0.155" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should set IsValidAccount to false when user account is disabled" name="Update-UserFile.ps1.Script Execution - Error Handling.should set IsValidAccount to false when user account is disabled" time="0.1581" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should catch accessDenied as unprovisioned OneDrive" name="Update-UserFile.ps1.Script Execution - Error Handling.should catch accessDenied as unprovisioned OneDrive" time="0.2124" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should report insufficient permissions when app lacks User.Read.All" name="Update-UserFile.ps1.Script Execution - Error Handling.should report insufficient permissions when app lacks User.Read.All" time="0.1592" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - End-to-End Workflow" executed="True" result="Success" success="True" time="8.4505" asserts="0" description="Update-UserFile.ps1.Script Execution - End-to-End Workflow">
+                <results>
+                  <test-case description="should process multiple rows and apply permissions" name="Update-UserFile.ps1.Script Execution - End-to-End Workflow.should process multiple rows and apply permissions" time="0.3627" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should apply correct roles for different permission levels" name="Update-UserFile.ps1.Script Execution - End-to-End Workflow.should apply correct roles for different permission levels" time="0.4037" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should disconnect from Graph after processing" name="Update-UserFile.ps1.Script Execution - End-to-End Workflow.should disconnect from Graph after processing" time="0.3678" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - Multi-User Processing" executed="True" result="Success" success="True" time="10.2753" asserts="0" description="Update-UserFile.ps1.Script Execution - Multi-User Processing">
+                <results>
+                  <test-case description="should process all unique owners when UserToProcess is not specified" name="Update-UserFile.ps1.Script Execution - Multi-User Processing.should process all unique owners when UserToProcess is not specified" time="0.5599" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should apply correct roles per owner when processing all users" name="Update-UserFile.ps1.Script Execution - Multi-User Processing.should apply correct roles per owner when processing all users" time="0.5252" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should continue processing remaining owners when one fails" name="Update-UserFile.ps1.Script Execution - Multi-User Processing.should continue processing remaining owners when one fails" time="0.4144" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should filter to single owner when UserToProcess is specified" name="Update-UserFile.ps1.Script Execution - Multi-User Processing.should filter to single owner when UserToProcess is specified" time="0.2988" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - UploadFiles Switch" executed="True" result="Success" success="True" time="12.5044" asserts="0" description="Update-UserFile.ps1.Script Execution - UploadFiles Switch">
+                <results>
+                  <test-case description="should upload files and create folders" name="Update-UserFile.ps1.Script Execution - UploadFiles Switch.should upload files and create folders" time="0.45" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should list files that would be uploaded with -WhatIf" name="Update-UserFile.ps1.Script Execution - UploadFiles Switch.should list files that would be uploaded with -WhatIf" time="0.3237" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should output upload result objects with expected properties" name="Update-UserFile.ps1.Script Execution - UploadFiles Switch.should output upload result objects with expected properties" time="0.4441" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should throw when user local folder does not exist" name="Update-UserFile.ps1.Script Execution - UploadFiles Switch.should throw when user local folder does not exist" time="0.2384" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should not upload when UploadFiles is not specified" name="Update-UserFile.ps1.Script Execution - UploadFiles Switch.should not upload when UploadFiles is not specified" time="0.3221" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should fail upload for files exceeding 4 MB" name="Update-UserFile.ps1.Script Execution - UploadFiles Switch.should fail upload for files exceeding 4 MB" time="0.3923" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - AllowedDomains Validation" executed="True" result="Success" success="True" time="13.9146" asserts="0" description="Update-UserFile.ps1.Script Execution - AllowedDomains Validation">
+                <results>
+                  <test-case description="should skip collaborators with domains not in AllowedDomains" name="Update-UserFile.ps1.Script Execution - AllowedDomains Validation.should skip collaborators with domains not in AllowedDomains" time="0.3974" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should allow collaborators with domains in AllowedDomains" name="Update-UserFile.ps1.Script Execution - AllowedDomains Validation.should allow collaborators with domains in AllowedDomains" time="0.3325" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should allow all domains when AllowedDomains is not specified" name="Update-UserFile.ps1.Script Execution - AllowedDomains Validation.should allow all domains when AllowedDomains is not specified" time="0.3745" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should perform case-insensitive domain matching" name="Update-UserFile.ps1.Script Execution - AllowedDomains Validation.should perform case-insensitive domain matching" time="0.2773" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - Retry-After Header Parsing" executed="True" result="Success" success="True" time="15.3149" asserts="0" description="Update-UserFile.ps1.Script Execution - Retry-After Header Parsing">
+                <results>
+                  <test-case description="should succeed after transient 429 with Retry-After in error details" name="Update-UserFile.ps1.Script Execution - Retry-After Header Parsing.should succeed after transient 429 with Retry-After in error details" time="0.4346" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should fail after exhausting all retry attempts" name="Update-UserFile.ps1.Script Execution - Retry-After Header Parsing.should fail after exhausting all retry attempts" time="0.4707" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should retry up to 6 times (new default) before failing" name="Update-UserFile.ps1.Script Execution - Retry-After Header Parsing.should retry up to 6 times (new default) before failing" time="0.4644" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - CSV Deduplication" executed="True" result="Success" success="True" time="15.996" asserts="0" description="Update-UserFile.ps1.Script Execution - CSV Deduplication">
+                <results>
+                  <test-case description="should deduplicate identical CSV rows and process each unique row once" name="Update-UserFile.ps1.Script Execution - CSV Deduplication.should deduplicate identical CSV rows and process each unique row once" time="0.3205" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should keep distinct rows with different collaborators" name="Update-UserFile.ps1.Script Execution - CSV Deduplication.should keep distinct rows with different collaborators" time="0.3331" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Update-UserFile.ps1.Script Execution - Post-Connection Auth Validation" executed="True" result="Success" success="True" time="16.1562" asserts="0" description="Update-UserFile.ps1.Script Execution - Post-Connection Auth Validation">
+                <results>
+                  <test-case description="should throw when session falls back to delegated auth" name="Update-UserFile.ps1.Script Execution - Post-Connection Auth Validation.should throw when session falls back to delegated auth" time="0.0654" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="should throw when session uses wrong ClientId" name="Update-UserFile.ps1.Script Execution - Post-Connection Auth Validation.should throw when session uses wrong ClientId" time="0.0782" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+            </results>
+          </test-suite>
+        </results>
+      </test-suite>
+    </results>
+  </test-suite>
+</test-results>
