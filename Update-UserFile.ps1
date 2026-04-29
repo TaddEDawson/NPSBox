@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.12
+    Version: 1.2.0.13
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -289,7 +289,8 @@ begin
         $requiredModules = @(
             'Microsoft.Graph.Authentication',   # Provides Connect-MgGraph, Invoke-MgGraphRequest
             'Microsoft.Graph.Users',            # Provides Get-MgUser and user-related cmdlets
-            'Microsoft.Graph.Files'             # Provides Get-MgUserDrive and drive-related cmdlets
+            'Microsoft.Graph.Files',            # Provides Get-MgUserDrive and drive-related cmdlets
+            'Microsoft.Graph.Applications'      # Provides Get-MgServicePrincipal for permission checks
         )
 
         foreach ($moduleName in $requiredModules)
@@ -868,6 +869,99 @@ begin
         } # if
     } # function Assert-GraphAssemblyCompatibility
 
+    # ── Assert-GraphPermissions ─────────────────────────────────────────────────
+    # Verifies that the app registration has the required Microsoft Graph
+    # application permissions (admin-consented).  Throws if any are missing.
+    # Reuses the same logic as Test-AzureAppRegistration.ps1.
+    #
+    # https://learn.microsoft.com/powershell/module/microsoft.graph.applications/get-mgserviceprincipal
+    # https://learn.microsoft.com/graph/api/serviceprincipal-list-approleassignments
+    function Assert-GraphPermissions
+    {
+        [CmdletBinding()]
+        param()
+
+        $requiredPermissions = @('Files.ReadWrite.All', 'User.Read.All')
+
+        Write-LogLine -Message "Validating app registration permissions..."
+
+        # Resolve the app's service principal.
+        $appSp = $null
+        try
+        {
+            $appSp = Get-MgServicePrincipal -Filter "appId eq '$ClientId'" -ErrorAction Stop
+        } # try
+        catch
+        {
+            Write-LogLine -Level 'WARN' -Message ("Could not look up service principal for ClientId '{0}': {1}. Skipping permission check." -f $ClientId, $_.Exception.Message)
+            return
+        } # catch
+
+        if ($null -eq $appSp)
+        {
+            Write-LogLine -Level 'WARN' -Message ("Service principal not found for ClientId '{0}'. Skipping permission check." -f $ClientId)
+            return
+        } # if
+
+        # Resolve the Microsoft Graph service principal.
+        $graphSp = $null
+        try
+        {
+            $graphSp = Get-MgServicePrincipal -Filter "displayName eq 'Microsoft Graph'" -ErrorAction Stop
+        } # try
+        catch
+        {
+            Write-LogLine -Level 'WARN' -Message ("Could not look up Microsoft Graph service principal: {0}. Skipping permission check." -f $_.Exception.Message)
+            return
+        } # catch
+
+        if ($null -eq $graphSp)
+        {
+            Write-LogLine -Level 'WARN' -Message "Microsoft Graph service principal not found. Skipping permission check."
+            return
+        } # if
+
+        # Get granted app role assignments.
+        $appRoleAssignments = @()
+        try
+        {
+            $appRoleAssignments = @(Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $appSp.Id -ErrorAction Stop)
+        } # try
+        catch
+        {
+            Write-LogLine -Level 'WARN' -Message ("Could not retrieve app role assignments: {0}. Skipping permission check." -f $_.Exception.Message)
+            return
+        } # catch
+
+        $grantedRoleIds = @{}
+        foreach ($assignment in $appRoleAssignments)
+        {
+            $grantedRoleIds[$assignment.AppRoleId] = $true
+        } # foreach
+
+        # Check each required permission.
+        $missingPermissions = @()
+        foreach ($permName in $requiredPermissions)
+        {
+            $roleDef = $graphSp.AppRoles | Where-Object { $_.Value -eq $permName } | Select-Object -First 1
+            if ($null -eq $roleDef -or -not $grantedRoleIds.ContainsKey($roleDef.Id))
+            {
+                $missingPermissions += $permName
+            } # if
+        } # foreach
+
+        if ($missingPermissions.Count -gt 0)
+        {
+            throw (
+                ("The app registration '{0}' (ClientId={1}) is missing required Graph application permissions: {2}. " +
+                "Grant these permissions with admin consent in Azure Portal > App registrations > API permissions.") -f
+                $appSp.DisplayName, $ClientId, ($missingPermissions -join ', ')
+            )
+        } # if
+
+        Write-LogLine -Message ("All required Graph permissions verified for app '{0}'." -f $appSp.DisplayName)
+    } # function Assert-GraphPermissions
+
     # ── Get-ValidatedUserDrive ────────────────────────────────────────────────────
     # Looks up a user's OneDrive drive via Microsoft Graph, validates the response,
     # and confirms the drive root is accessible.  Returns a custom object with the
@@ -1036,6 +1130,7 @@ begin
     Assert-GraphAssemblyCompatibility   # Check for PnP.PowerShell conflicts
     Assert-RequiredModules              # Import Graph SDK modules
     Connect-Graph                       # Authenticate to Microsoft Graph
+    Assert-GraphPermissions             # Verify required app permissions
 
     # Cache the CSV data once in the begin block so piping multiple UPNs does
     # not re-read and re-parse the file for each pipeline input.

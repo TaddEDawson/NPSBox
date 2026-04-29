@@ -5,7 +5,7 @@
     Verifies that the Azure AD app registration has the required Microsoft Graph
     permissions for the NPSBox migration script.
 
-    Version: 1.2.0.12
+    Version: 1.2.0.13
     Date:    2026-04-29
 
 .DESCRIPTION
