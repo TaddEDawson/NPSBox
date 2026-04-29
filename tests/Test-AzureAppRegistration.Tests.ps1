@@ -21,7 +21,7 @@ Describe 'Test-AzureAppRegistration.ps1' {
 
         $script:DefaultThumbprint = 'AABBCCDDEE1122334455AABBCCDDEE1122334455'
         $script:DefaultTenantId   = '92075952-90f3-4613-833b-d2e19ec649e4'
-        $script:DefaultClientId   = '98454154-dff8-44fd-8ec2-02fdf7da2015'
+        $script:DefaultClientId   = '912696b9-1374-4110-893d-545fc17c3371'
 
         # Stubs for script-internal functions.
         function Assert-RequiredModules { }

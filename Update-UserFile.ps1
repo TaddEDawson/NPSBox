@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.11
+    Version: 1.2.0.12
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -186,7 +186,7 @@ param
     ,
     # The app registration's client ID (GUID).
     [Parameter()]
-    [string] $ClientId = "98454154-dff8-44fd-8ec2-02fdf7da2015"
+    [string] $ClientId = "912696b9-1374-4110-893d-545fc17c3371"
     ,
     # Certificate thumbprint for app-only auth.
     [Parameter()]
