@@ -180,7 +180,7 @@ param
     ,
     # The app registration's client ID (GUID).
     [Parameter()]
-    [string] $ClientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
+    [string] $ClientId = "98454154-dff8-44fd-8ec2-02fdf7da2015"
     ,
     # Certificate thumbprint for app-only auth.
     [Parameter()]
@@ -538,11 +538,19 @@ begin
             # Get-MgContext returns the current Graph session (or $null).
             # If we already have a session for the correct tenant, skip re-auth.
             $existingContext = Get-MgContext -ErrorAction SilentlyContinue
-            if ($null -ne $existingContext -and $existingContext.TenantId -eq $TenantId)
+            if ($null -ne $existingContext -and $existingContext.TenantId -eq $TenantId -and $existingContext.AuthType -eq 'AppOnly')
             {
                 Write-LogLine -Message ("Reusing existing Microsoft Graph context (app-only). TenantId={0}, AppName={1}, AuthType={2}" -f
                     $existingContext.TenantId, $existingContext.AppName, $existingContext.AuthType)
                 return
+            } # if
+
+            # Disconnect any existing delegated or mismatched session before
+            # establishing certificate-based app-only auth.
+            if ($null -ne $existingContext)
+            {
+                Write-LogLine -Message ("Disconnecting existing Graph session (AuthType={0}) to establish app-only auth." -f $existingContext.AuthType)
+                Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
             } # if
 
             if ([string]::IsNullOrWhiteSpace($TenantId))
