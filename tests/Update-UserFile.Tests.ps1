@@ -413,6 +413,24 @@ Describe 'Update-UserFile.ps1' {
             $results[0].ExistsInOneDrive | Should -Be $false
             $results[0].Status | Should -Be 'Failed'
         }
+
+        It 'should provide actionable error when OneDrive is not provisioned' {
+            $rows = @(New-CsvRow)
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                throw [System.Exception]::new('ResourceNotFound: the user does not exist or OneDrive is not provisioned')
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results[0].Status | Should -Be 'Failed'
+            $results[0].Error | Should -Match 'not provisioned'
+            $results[0].Error | Should -Match 'portal\.office\.com'
+        }
     }
 
     Context 'Script Execution - End-to-End Workflow' {

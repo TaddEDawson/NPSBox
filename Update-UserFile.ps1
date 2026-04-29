@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.5
+    Version: 1.2.0.6
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -882,9 +882,27 @@ begin
         )
 
         Write-LogLine -Message ("Resolving OneDrive drive for owner: {0}" -f $UserPrincipalName)
-        $userDrive = Invoke-WithGraphRetry -OperationName ("Get-MgUserDrive for '{0}'" -f $UserPrincipalName) -Operation {
-            Get-MgUserDrive -UserId $UserPrincipalName -ErrorAction Stop
-        } # inline:$userDrive = Invoke-WithGraphRetry -Oper
+        try
+        {
+            $userDrive = Invoke-WithGraphRetry -OperationName ("Get-MgUserDrive for '{0}'" -f $UserPrincipalName) -Operation {
+                Get-MgUserDrive -UserId $UserPrincipalName -ErrorAction Stop
+            } # inline:$userDrive = Invoke-WithGraphRetry -Oper
+        } # try
+        catch
+        {
+            $errMsg = $_.Exception.Message
+            # Detect common provisioning-related errors and provide actionable guidance.
+            if ($errMsg -match '404|ResourceNotFound|not found|does not exist|no OneDrive')
+            {
+                throw (
+                    "OneDrive is not provisioned for user '{0}'. " +
+                    "Ensure the user has a license that includes OneDrive and has signed in at least once. " +
+                    "Provision manually: https://portal.office.com or via SharePoint admin PowerShell. " +
+                    "Original error: {1}" -f $UserPrincipalName, $errMsg
+                )
+            } # if
+            throw
+        } # catch
 
         if ($null -eq $userDrive -or [string]::IsNullOrWhiteSpace([string] $userDrive.Id))
         {
