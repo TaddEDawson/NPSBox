@@ -526,6 +526,26 @@ Describe 'Update-UserFile.ps1' {
             $results[0].Error | Should -Match 'not provisioned'
             $results[0].Error | Should -Match 'Request-SPOPersonalSite'
         }
+
+        It 'should report insufficient permissions when app lacks User.Read.All' {
+            $rows = @(New-CsvRow)
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                throw [System.Exception]::new('[Authorization_RequestDenied] : Insufficient privileges to complete the operation.')
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results[0].Status | Should -Be 'Failed'
+            $results[0].IsValidAccount | Should -Be $false
+            $results[0].OneDriveProvisioned | Should -Be $false
+            $results[0].Error | Should -Match 'User\.Read\.All'
+            $results[0].Error | Should -Match $script:DefaultOwner.Replace('.', '\.')
+        }
     }
 
     Context 'Script Execution - End-to-End Workflow' {

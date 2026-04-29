@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.9
+    Version: 1.2.0.10
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -900,10 +900,21 @@ begin
         } # try
         catch
         {
+            $errMsg = $_.Exception.Message
+            # Distinguish permission errors from user-not-found errors.
+            if ($errMsg -match 'Authorization_RequestDenied|Insufficient privileges|Forbidden')
+            {
+                throw (
+                    ("The app registration lacks permission to read user '{0}'. " +
+                    "Grant 'User.Read.All' (Application) with admin consent in Azure Portal > App registrations. " +
+                    "Original error: {1}") -f $UserPrincipalName, $errMsg
+                )
+            } # if
+
             throw (
-                "User account '{0}' could not be found in the tenant. " +
+                ("User account '{0}' could not be found in the tenant. " +
                 "Verify the UPN is correct and the account exists in Microsoft Entra ID. " +
-                "Original error: {1}" -f $UserPrincipalName, $_.Exception.Message
+                "Original error: {1}") -f $UserPrincipalName, $errMsg
             )
         } # catch
 
@@ -1110,7 +1121,7 @@ process
 
             # Determine which validation step failed for the status flags.
             $errText = $_.Exception.Message
-            $isValid  = -not ($errText -match 'could not be found in the tenant|Get-MgUser returned null|is disabled')
+            $isValid  = -not ($errText -match 'could not be found in the tenant|Get-MgUser returned null|is disabled|lacks permission to read user')
             $isDriveOk = $false
 
             foreach ($row in $rows)
