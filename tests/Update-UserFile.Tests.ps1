@@ -35,6 +35,8 @@ Describe 'Update-UserFile.ps1' {
         function Assert-GraphAssemblyCompatibility { }
         function Get-ValidatedUserDrive { }
         function Invoke-OneDriveUpload { }
+        function Test-CollaboratorDomain { return $true }
+        function Get-RetryAfterSeconds { return $null }
 
         # Module cmdlets — only stub if not already available from the installed module.
         foreach ($cmdletName in @(
@@ -764,6 +766,87 @@ Describe 'Update-UserFile.ps1' {
             } 6>&1
 
             $results[0].Status | Should -Be 'Applied'
+        }
+    }
+
+    Context 'Script Execution - Retry-After Header Parsing' {
+        BeforeEach {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_retry.csv'
+            $rows = @(
+                (New-CsvRow -ItemName 'RetryDoc.txt' -CollaboratorPermission 'Editor')
+            )
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_retry'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+        }
+
+        It 'should succeed after transient 429 with Retry-After in error details' {
+            $script:CallCount = 0
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    return [PSCustomObject]@{ id = 'item-id'; name = 'RetryDoc.txt' }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    $script:CallCount++
+                    if ($script:CallCount -le 1) {
+                        $err = [System.Exception]::new('429 Too Many Requests')
+                        $errRecord = [System.Management.Automation.ErrorRecord]::new($err, 'Throttled', 'InvalidOperation', $null)
+                        $errRecord | Add-Member -NotePropertyName 'ErrorDetails' -NotePropertyValue ([PSCustomObject]@{ Message = '{"error":{"code":"TooManyRequests","retryAfterSeconds":2}}' }) -Force
+                        throw $errRecord
+                    }
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+            }
+
+            Mock -CommandName 'Start-Sleep' -MockWith { }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'RetryDoc.txt' }
+            $result.Status | Should -Be 'Applied'
+            Assert-MockCalled -CommandName 'Start-Sleep' -Times 1 -Scope It
+        }
+
+        It 'should fail after exhausting all retry attempts' {
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    return [PSCustomObject]@{ id = 'item-id'; name = 'RetryDoc.txt' }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    throw [System.Exception]::new('429 Too Many Requests')
+                }
+            }
+
+            Mock -CommandName 'Start-Sleep' -MockWith { }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'RetryDoc.txt' }
+            $result.Status | Should -Be 'Failed'
+            $result.Error | Should -Match '429'
         }
     }
 }

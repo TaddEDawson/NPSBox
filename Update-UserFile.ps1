@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.2
+    Version: 1.2.0.3
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -491,6 +491,67 @@ begin
         )
     } # function Test-IsRetryableGraphError
 
+    # ── Get-RetryAfterSeconds ───────────────────────────────────────────────────
+    # Parses the Retry-After value from a Graph API error response.
+    # Graph 429 responses include a Retry-After header (in seconds) that tells
+    # the client exactly how long to wait before retrying.
+    # Returns the parsed value in seconds, or $null if not found.
+    # https://learn.microsoft.com/graph/throttling
+    function Get-RetryAfterSeconds
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [System.Management.Automation.ErrorRecord] $ErrorRecord
+        )
+
+        # Graph SDK errors embed the Retry-After value in the error details or
+        # exception message.  Look for common patterns.
+        $details = [string] $ErrorRecord.ErrorDetails.Message
+        $message = [string] $ErrorRecord.Exception.Message
+        $combined = $details + ' ' + $message
+
+        # Pattern 1: JSON body with "retryAfterSeconds" or "retry-after" key.
+        if ($combined -match '"retry[\-_]?after(?:Seconds)?"\s*:\s*(\d+)')
+        {
+            return [int] $Matches[1]
+        } # if
+
+        # Pattern 2: Header-style "Retry-After: <seconds>" in error text.
+        if ($combined -match 'Retry-After\s*:\s*(\d+)')
+        {
+            return [int] $Matches[1]
+        } # if
+
+        # Pattern 3: Check the exception's Response.Headers if available
+        # (HttpRequestException or similar with a Response property).
+        $response = $ErrorRecord.Exception.PSObject.Properties['Response']
+        if ($null -ne $response -and $null -ne $response.Value)
+        {
+            $headers = $response.Value.PSObject.Properties['Headers']
+            if ($null -ne $headers -and $null -ne $headers.Value)
+            {
+                $retryHeader = $null
+                if ($headers.Value -is [System.Collections.IDictionary])
+                {
+                    $retryHeader = $headers.Value['Retry-After']
+                } # if
+
+                if ($null -ne $retryHeader)
+                {
+                    $parsed = 0
+                    if ([int]::TryParse([string] $retryHeader, [ref] $parsed))
+                    {
+                        return $parsed
+                    } # if
+                } # if
+            } # if
+        } # if
+
+        return $null
+    } # function Get-RetryAfterSeconds
+
     # ── Invoke-WithGraphRetry ────────────────────────────────────────────────────
     # Wraps a Graph API call with automatic retry and exponential backoff.
     # If the call fails with a transient error (timeout, 429, 5xx), it waits and
@@ -545,6 +606,16 @@ begin
                     "Transient Graph failure during '{0}' (attempt {1}/{2}): {3}. Retrying in {4}s." -f
                     $OperationName, $attempt, $MaxAttempts, $_.Exception.Message, $delaySeconds
                 )
+
+                # Honour the Retry-After header from Graph 429 responses when available.
+                # This tells us exactly how long to wait, which is more accurate than
+                # our exponential backoff guess.
+                $retryAfter = Get-RetryAfterSeconds -ErrorRecord $_
+                if ($null -ne $retryAfter -and $retryAfter -gt 0)
+                {
+                    $delaySeconds = [Math]::Min($retryAfter, $MaxDelaySeconds)
+                    Write-LogLine -Level 'WARN' -Message ("Using Retry-After value: {0}s (capped at {1}s)." -f $retryAfter, $MaxDelaySeconds)
+                } # if
 
                 Start-Sleep -Seconds $delaySeconds
                 $attempt += 1
