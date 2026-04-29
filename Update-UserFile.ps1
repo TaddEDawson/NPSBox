@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.6
+    Version: 1.2.0.7
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -574,15 +574,15 @@ begin
             ,
             [Parameter()]
             [ValidateRange(1, 10)]
-            [int] $MaxAttempts = 4
+            [int] $MaxAttempts = 6
             ,
             [Parameter()]
             [ValidateRange(1, 60)]
             [int] $InitialDelaySeconds = 2
             ,
             [Parameter()]
-            [ValidateRange(1, 120)]
-            [int] $MaxDelaySeconds = 20
+            [ValidateRange(1, 300)]
+            [int] $MaxDelaySeconds = 60
         )
 
         $attempt = 1

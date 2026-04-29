@@ -888,5 +888,35 @@ Describe 'Update-UserFile.ps1' {
             $result.Status | Should -Be 'Failed'
             $result.Error | Should -Match '429'
         }
+
+        It 'should retry up to 6 times (new default) before failing' {
+            $script:InviteCallCount = 0
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    return [PSCustomObject]@{ id = 'item-id'; name = 'RetryDoc.txt' }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    $script:InviteCallCount++
+                    throw [System.Exception]::new('503 Service Unavailable')
+                }
+            }
+
+            Mock -CommandName 'Start-Sleep' -MockWith { }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'RetryDoc.txt' }
+            $result.Status | Should -Be 'Failed'
+            # Default MaxAttempts is now 6, so Start-Sleep should be called 5 times
+            # (once per retry, not on the final failure).
+            Assert-MockCalled -CommandName 'Start-Sleep' -Times 5 -Scope It
+        }
     }
 }
