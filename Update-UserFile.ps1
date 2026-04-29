@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.3
+    Version: 1.2.0.4
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -792,6 +792,15 @@ begin
 
             try
             {
+                # The simple upload endpoint supports files up to 4 MB.
+                # Larger files require a resumable upload session (not implemented).
+                # https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0
+                $maxSimpleUploadBytes = 4 * 1024 * 1024  # 4 MB
+                if ($file.Length -gt $maxSimpleUploadBytes)
+                {
+                    throw ("File size {0:N0} bytes exceeds the 4 MB simple-upload limit. Use a resumable upload session for large files." -f $file.Length)
+                } # if
+
                 if ($PSCmdlet.ShouldProcess("OneDrive:/$relativePath ($($file.Length) bytes)", "Upload file"))
                 {
                     $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)

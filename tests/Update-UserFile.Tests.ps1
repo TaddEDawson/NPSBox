@@ -684,6 +684,28 @@ Describe 'Update-UserFile.ps1' {
             $uploadResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -in @('CreateFolder', 'UploadFile') }
             $uploadResults | Should -BeNullOrEmpty
         }
+
+        It 'should fail upload for files exceeding 4 MB' {
+            # Create a file larger than 4 MB
+            $largeFolderRoot = Join-Path -Path $TestDrive -ChildPath 'LargeLocalFiles'
+            $largeUserPath = Join-Path -Path $largeFolderRoot -ChildPath $script:DefaultOwner
+            New-Item -Path $largeUserPath -ItemType Directory -Force | Out-Null
+            $largeFile = Join-Path -Path $largeUserPath -ChildPath 'BigFile.bin'
+            # Create a 5 MB file (exceeds 4 MB limit)
+            $bytes = [byte[]]::new(5 * 1024 * 1024)
+            [System.IO.File]::WriteAllBytes($largeFile, $bytes)
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $largeFolderRoot -UploadFiles -Verbose:$false
+            } 6>&1
+
+            $uploadResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' }
+            $failedUpload = $uploadResults | Where-Object { $_.Status -eq 'Failed' }
+            $failedUpload | Should -Not -BeNullOrEmpty
+            $failedUpload.Error | Should -Match '4 MB'
+        }
     }
 
     Context 'Script Execution - AllowedDomains Validation' {
