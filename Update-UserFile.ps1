@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.14
+    Version: 1.2.0.15
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -245,7 +245,13 @@ begin
 
         # -f is the format operator:  "{0} {1}" -f 'Hello','World'  =>  "Hello World"
         # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_operators#format-operator--f
-        $line = "{0} [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffK'), $Level, $Message
+        #
+        # Get-PSCallStack returns the call stack; index [1] is the immediate caller.
+        # ScriptLineNumber gives us the line in the .ps1 file that invoked Write-LogLine.
+        # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/get-pscallstack
+        $callerFrame = (Get-PSCallStack)[1]
+        $callerLine  = if ($null -ne $callerFrame) { $callerFrame.ScriptLineNumber } else { 0 }
+        $line = "{0} [{1}] (line {2}) {3}" -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffK'), $Level, $callerLine, $Message
         Write-Verbose $line
 
         if (-not [string]::IsNullOrWhiteSpace($script:LogFilePath))
