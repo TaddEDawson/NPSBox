@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.10
+    Version: 1.2.0.11
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -53,7 +53,13 @@
         https://learn.microsoft.com/powershell/microsoftgraph/installation
       - An Azure AD App Registration with the following APPLICATION permissions
         granted with admin consent:
-          Files.ReadWrite.All
+          Files.ReadWrite.All   — Read/write all users' OneDrive files, upload
+                                   content, and grant sharing permissions via the
+                                   driveItem: invite API.
+          User.Read.All         — Look up user accounts (Get-MgUser) to validate
+                                   that owner and collaborator UPNs exist and are
+                                   enabled before attempting drive operations.
+        https://learn.microsoft.com/graph/permissions-reference
         https://learn.microsoft.com/entra/identity-platform/quickstart-register-app
       - A certificate uploaded to the app registration
         https://learn.microsoft.com/entra/identity-platform/certificate-credentials
