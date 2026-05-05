@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.1.0
+    Version: 1.2.1.1
     Date:    2026-05-05
 
 .DESCRIPTION
@@ -213,6 +213,13 @@ param
     # external sharing.  Example: @('contoso.com', 'contoso.onmicrosoft.com')
     [Parameter()]
     [string[]] $AllowedDomains
+    ,
+    # When present, verifies authentication and access requirements only.
+    # The script authenticates to Microsoft Graph, asserts required modules,
+    # checks assembly compatibility, validates app permissions, and then exits
+    # without processing any CSV rows.  Useful for pre-flight validation.
+    [Parameter()]
+    [switch] $Test
 )
 
 # ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -1170,10 +1177,23 @@ begin
     Connect-GraphCertAuth               # Authenticate to Microsoft Graph
     Assert-GraphPermissions             # Verify required app permissions
 
+    # ── Test mode: verify auth and access, then exit ─────────────────────────
+    # When -Test is specified, the script validates that authentication and
+    # permissions are in order but does not process any CSV data.
+    if ($Test)
+    {
+        Write-LogLine -Message "Test mode: authentication and access verification completed successfully."
+        $script:TestModeActive = $true
+    } # if
+    else
+    {
+        $script:TestModeActive = $false
+    } # else
+
     # Cache the CSV data once in the begin block so piping multiple UPNs does
     # not re-read and re-parse the file for each pipeline input.
     $script:CachedCsvRows = $null
-    if ($InputFile.Exists)
+    if (-not $script:TestModeActive -and $InputFile.Exists)
     {
         $script:CachedCsvRows = Import-Csv -LiteralPath $InputFile.FullName
     } # if
@@ -1189,6 +1209,17 @@ begin
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 process
 {
+    # ── Test mode: skip all CSV processing ────────────────────────────────────
+    if ($script:TestModeActive)
+    {
+        [pscustomobject]@{
+            Test   = $true
+            Status = 'Passed'
+            Detail = 'Authentication and access verification completed successfully.'
+        }
+        return
+    } # if
+
     if (-not $InputFile.Exists)
     {
         throw "InputFile not found: $($InputFile.FullName)"

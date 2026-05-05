@@ -1572,6 +1572,161 @@ Describe 'Update-UserFile.ps1' {
             $script:callCount | Should -Be 2
         }
     }
+
+    Context 'Script Execution - Test Switch (Pre-flight Validation)' {
+        BeforeEach {
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_test'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+        }
+
+        It 'should return a Passed result when -Test succeeds' {
+            $results = & {
+                . $script:ScriptUnderTest -Test `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results | Should -Not -BeNullOrEmpty
+            $testResult = $results | Where-Object { $_.Test -eq $true }
+            $testResult | Should -Not -BeNullOrEmpty
+            $testResult.Status | Should -Be 'Passed'
+            $testResult.Detail | Should -Match 'Authentication and access verification'
+        }
+
+        It 'should call Assert-RequiredModules when -Test is specified' {
+            & {
+                . $script:ScriptUnderTest -Test `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1 | Out-Null
+
+            Should -Invoke -CommandName 'Assert-RequiredModules' -Times 1 -Exactly
+        }
+
+        It 'should call Assert-GraphAssemblyCompatibility when -Test is specified' {
+            & {
+                . $script:ScriptUnderTest -Test `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1 | Out-Null
+
+            Should -Invoke -CommandName 'Assert-GraphAssemblyCompatibility' -Times 1 -Exactly
+        }
+
+        It 'should call Connect-GraphCertAuth when -Test is specified' {
+            & {
+                . $script:ScriptUnderTest -Test `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1 | Out-Null
+
+            Should -Invoke -CommandName 'Connect-GraphCertAuth' -Times 1 -Exactly
+        }
+
+        It 'should call Assert-GraphPermissions when -Test is specified' {
+            & {
+                . $script:ScriptUnderTest -Test `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1 | Out-Null
+
+            Should -Invoke -CommandName 'Assert-GraphPermissions' -Times 1 -Exactly
+        }
+
+        It 'should not process CSV rows when -Test is specified' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_noproc.csv'
+            @(New-CsvRow -ItemName 'ShouldNotProcess.txt') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith { }
+
+            $results = & {
+                . $script:ScriptUnderTest -Test -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $csvResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'ItemName' }
+            $csvResults | Should -BeNullOrEmpty
+
+            Should -Invoke -CommandName 'Get-MgUser' -Times 0 -Exactly
+            Should -Invoke -CommandName 'Get-MgUserDrive' -Times 0 -Exactly
+            Should -Invoke -CommandName 'Invoke-MgGraphRequest' -Times 0 -Exactly
+        }
+
+        It 'should fail when Assert-RequiredModules throws with -Test' {
+            Mock -CommandName 'Assert-RequiredModules' -MockWith {
+                throw 'Required module not found: Microsoft.Graph.Authentication.'
+            }
+
+            $threwError = $false
+            try
+            {
+                & {
+                    . $script:ScriptUnderTest -Test `
+                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                } 6>&1 | Out-Null
+            }
+            catch
+            {
+                $threwError = $true
+                $_.Exception.Message | Should -Match 'Required module not found'
+            }
+
+            $threwError | Should -Be $true
+        }
+
+        It 'should fail when Assert-GraphPermissions throws with -Test' {
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith {
+                throw "The app registration is missing required Graph application permissions: Files.ReadWrite.All."
+            }
+
+            $threwError = $false
+            try
+            {
+                & {
+                    . $script:ScriptUnderTest -Test `
+                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                } 6>&1 | Out-Null
+            }
+            catch
+            {
+                $threwError = $true
+                $_.Exception.Message | Should -Match 'missing required Graph application permissions'
+            }
+
+            $threwError | Should -Be $true
+        }
+
+        It 'should fail when Connect-GraphCertAuth throws with -Test' {
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith {
+                throw "Certificate auth requires -TenantId."
+            }
+
+            $threwError = $false
+            try
+            {
+                & {
+                    . $script:ScriptUnderTest -Test `
+                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                } 6>&1 | Out-Null
+            }
+            catch
+            {
+                $threwError = $true
+                $_.Exception.Message | Should -Match 'Certificate auth requires'
+            }
+
+            $threwError | Should -Be $true
+        }
+    }
 }
 
 
