@@ -146,7 +146,7 @@ The script maps Box permissions to [Microsoft Graph sharing roles](https://learn
 |---|---|---|
 | `Co-owner` | `write` | View + edit access |
 | `Editor` | `write` | View + edit access |
-| `Viewer Uploader` | `write` | View + edit access |
+| `Viewer Uploader` | `read` | View-only access (upload aspect not supported in Graph) |
 | `Viewer` | `read` | View-only access |
 | `Previewer Uploader` | *(skipped)* | No Graph equivalent |
 | `Previewer` | *(skipped)* | No Graph equivalent |
@@ -156,10 +156,12 @@ Rows with unmapped roles are skipped with a log entry.
 
 ### Authentication
 
-`Update-UserFile.ps1` uses certificate-based app-only authentication. The app registration
-must have **Application** permissions `Files.ReadWrite.All` and `User.Read.All` granted with admin consent.
+`Update-UserFile.ps1` uses certificate-based app-only authentication via `Connect-GraphCertAuth` (an internal helper function). The app registration must have **Application** permissions `Files.ReadWrite.All` and `User.Read.All` granted with admin consent.
 
-The script reuses an existing Graph session if the `TenantId` matches, avoiding redundant authentication.
+> **Important — `Connect-Graph` alias collision (fixed in v1.2.0.17):**
+> The `Microsoft.Graph.Authentication` module exports `Connect-Graph` as an **alias** for `Connect-MgGraph`. PowerShell resolves aliases before functions, so any script function named `Connect-Graph` is silently shadowed after the module is imported. The bare alias invokes `Connect-MgGraph` with no parameters, which falls back to **delegated** auth using the default Microsoft Graph Command Line Tools app (`14d82eec-...`) instead of certificate-based app-only auth. This caused all Graph API calls to fail with `Authorization_RequestDenied` (insufficient privileges). The fix was renaming the script's function to `Connect-GraphCertAuth` to avoid the collision.
+
+The script reuses an existing Graph session if the `TenantId` and `AuthType` match, avoiding redundant authentication.
 
 - [Connect-MgGraph reference](https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/connect-mggraph)
 - [Graph authentication overview](https://learn.microsoft.com/powershell/microsoftgraph/authentication-commands)
@@ -300,6 +302,7 @@ See [Microsoft Graph throttling guidance](https://learn.microsoft.com/graph/thro
 - **No idempotency check:** Re-running re-grants every permission without checking existing roles. Granting a different role to an existing collaborator may create a second permission entry.
 - **No Graph batching:** Each permission grant is a separate HTTP request. Graph supports batching up to 20 requests (future enhancement).
 - **PnP.PowerShell conflict:** Do not import `PnP.PowerShell` in the same session. It loads `Microsoft.Graph.Core` 1.x, which is incompatible with Graph SDK v2. Start a fresh `pwsh` session.
+- **`Connect-Graph` alias collision:** The `Microsoft.Graph.Authentication` module exports `Connect-Graph` as an alias. Do not name custom functions `Connect-Graph` — use `Connect-GraphCertAuth` or a similar unique name to avoid silent delegation fallback.
 - Always run with `-WhatIf` first in a new tenant or against new datasets.
 
 ---
@@ -340,3 +343,12 @@ This repository includes [`DISCLAIMER.MD`](DISCLAIMER.MD). Please review it befo
 ## Assumptions & constraints
 
 See [`assumptions.md`](assumptions.md) for a comprehensive audit of security, performance, throttling, data handling, infrastructure, file upload, logging, and permission mapping assumptions.
+
+---
+
+## Changelog
+
+| Version | Date | Summary |
+|---|---|---|
+| **1.2.0.17** | 2026-05-05 | **Critical fix:** Renamed `Connect-Graph` → `Connect-GraphCertAuth` to avoid alias collision with `Microsoft.Graph.Authentication` module. The module exports `Connect-Graph` as an alias for `Connect-MgGraph`; PowerShell resolves aliases before functions, causing the script's auth function to be silently bypassed. This resulted in delegated auth (wrong ClientId, insufficient permissions) instead of certificate-based app-only auth. Uploads and permission grants failed with `Authorization_RequestDenied`. All 57 Pester tests updated and passing. |
+| 1.2.0.16 | 2026-04-29 | Previous release |

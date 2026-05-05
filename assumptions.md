@@ -1,7 +1,7 @@
 # Assumptions & Constraints Audit
 
-Reviewed: 2026-04-29
-Script: `Update-UserFile.ps1` v1.2.0.15
+Reviewed: 2026-05-05
+Script: `Update-UserFile.ps1` v1.2.0.17
 
 ---
 
@@ -17,6 +17,7 @@ Script: `Update-UserFile.ps1` v1.2.0.15
 | S6 | **No RFC 5322 email validation** — Collaborator Login is checked for `@` to extract domain. Strings without `@` (e.g., `notanemail`) cause the row to be skipped. No full email format validation. | Low | Documented |
 | S7 | **Certificate must be in `Cert:\CurrentUser\My`** — If the certificate with the specified thumbprint is not found in the user's personal cert store, `Connect-MgGraph` may silently fall back to delegated (interactive) auth, which lacks required application permissions. Validation catches this. | **High** | Documented (validated at startup) |
 | S8 | **PnP.PowerShell loaded = terminating error** — Script checks for PnP.PowerShell in the same session and throws before any Graph calls. Known assembly conflict between Graph SDK v2 (3.x) and PnP's `Microsoft.Graph.Core` v1.x. Must run in a clean `pwsh` session. | **High** | By design — `Assert-GraphAssemblyCompatibility` enforces. |
+| S9 | **`Connect-Graph` alias collision** — `Microsoft.Graph.Authentication` exports `Connect-Graph` as an alias for `Connect-MgGraph`. PowerShell resolves aliases before functions, so a script function named `Connect-Graph` is silently shadowed after module import. The bare alias invokes `Connect-MgGraph` with no parameters, falling back to delegated auth (wrong ClientId, insufficient permissions). All Graph calls fail with `Authorization_RequestDenied`. | **Critical** | Fixed in v1.2.0.17 — Renamed function to `Connect-GraphCertAuth`. |
 
 ## Performance
 
@@ -64,6 +65,7 @@ Script: `Update-UserFile.ps1` v1.2.0.15
 | I5 | **Graph API v1.0 endpoint hardcoded** — All calls use `https://graph.microsoft.com/v1.0/...`. No beta endpoint or version negotiation. | Low | By design |
 | I6 | **Graph module imports are version-specific** — Script imports `Microsoft.Graph.Authentication`, `.Users`, `.Files`, `.Applications`. If any module is uninstalled or a major version mismatch occurs, `Assert-RequiredModules` throws at startup. | Medium | By design |
 | I7 | **Assembly compatibility checked at startup** — If `Microsoft.Graph.Core` v1.x is already loaded in the AppDomain (e.g., from PnP or a prior script in ISE), Graph SDK v2 calls will fail. Script detects and advises starting a fresh `pwsh` session. | Medium | By design |
+| I8 | **Module-exported aliases can shadow script functions** — The Graph SDK exports aliases (`Connect-Graph` → `Connect-MgGraph`) that take precedence over script-scoped functions of the same name. Any future helper functions should avoid names that collide with module aliases. Run `Get-Alias <name> -ErrorAction SilentlyContinue` before choosing a function name. | **High** | Fixed in v1.2.0.17 — `Connect-Graph` renamed to `Connect-GraphCertAuth`. |
 
 ## File Upload (`-UploadFiles`)
 
