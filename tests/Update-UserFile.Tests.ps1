@@ -99,6 +99,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
 
@@ -212,6 +213,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
             Mock -CommandName 'Get-MgUser' -MockWith {
@@ -291,6 +293,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
             Mock -CommandName 'Get-MgUser' -MockWith {
@@ -388,6 +391,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
         }
@@ -570,6 +574,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
             Mock -CommandName 'Get-MgUser' -MockWith {
@@ -640,6 +645,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
             Mock -CommandName 'Get-MgUser' -MockWith {
@@ -748,6 +754,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
             Mock -CommandName 'Get-MgUser' -MockWith {
@@ -879,6 +886,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
             Mock -CommandName 'Get-MgUser' -MockWith {
@@ -964,6 +972,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
             Mock -CommandName 'Get-MgUser' -MockWith {
@@ -1074,6 +1083,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
             Mock -CommandName 'Get-MgUser' -MockWith {
