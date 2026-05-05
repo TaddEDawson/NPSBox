@@ -1580,23 +1580,61 @@ Describe 'Update-UserFile.ps1' {
 
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
-            Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { return 'Verified' }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
         }
 
-        It 'should return a Passed result when -Test succeeds' {
+        It 'should emit per-step results with Passed status when all steps succeed' {
             $results = & {
                 . $script:ScriptUnderTest -Test `
                     -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
-            $results | Should -Not -BeNullOrEmpty
-            $testResult = $results | Where-Object { $_.Test -eq $true }
-            $testResult | Should -Not -BeNullOrEmpty
-            $testResult.Status | Should -Be 'Passed'
-            $testResult.Detail | Should -Match 'Authentication and access verification'
+            $stepResults = $results | Where-Object { $_.Test -eq $true -and $_.Step -ne 'Overall' }
+            $stepResults.Count | Should -Be 4
+
+            ($stepResults | Where-Object { $_.Step -eq 'Assembly compatibility' }).Status | Should -Be 'Passed'
+            ($stepResults | Where-Object { $_.Step -eq 'Required modules' }).Status | Should -Be 'Passed'
+            ($stepResults | Where-Object { $_.Step -eq 'Certificate authentication' }).Status | Should -Be 'Passed'
+            ($stepResults | Where-Object { $_.Step -eq 'Permission validation' }).Status | Should -Be 'Passed'
+        }
+
+        It 'should emit Overall Passed when all steps pass' {
+            $results = & {
+                . $script:ScriptUnderTest -Test `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $overall = $results | Where-Object { $_.Step -eq 'Overall' }
+            $overall | Should -Not -BeNullOrEmpty
+            $overall.Status | Should -Be 'Passed'
+        }
+
+        It 'should mark Permission validation as Skipped when Assert-GraphPermissions returns Skipped' {
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { return 'Skipped' }
+
+            $results = & {
+                . $script:ScriptUnderTest -Test `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $permStep = $results | Where-Object { $_.Step -eq 'Permission validation' }
+            $permStep.Status | Should -Be 'Skipped'
+            $permStep.Detail | Should -Match 'Application\.Read\.All'
+        }
+
+        It 'should emit Overall Passed with warnings when a step is Skipped' {
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { return 'Skipped' }
+
+            $results = & {
+                . $script:ScriptUnderTest -Test `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $overall = $results | Where-Object { $_.Step -eq 'Overall' }
+            $overall.Status | Should -Be 'Passed with warnings'
         }
 
         It 'should call Assert-RequiredModules when -Test is specified' {
