@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.2
+    Version: 1.2.2.3
     Date:    2026-05-05
 
 .DESCRIPTION
@@ -183,22 +183,25 @@ param
     [string] $UserToProcess
     ,
     # Your tenant ID (GUID).  Find it: Azure Portal > Entra ID > Overview.
+    # Defaults to $env:NPSBOX_TENANT_ID if set.  Use Set-NPSBoxEnv.ps1 to persist.
     [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
     [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
-    [string] $TenantId
+    [string] $TenantId = $env:NPSBOX_TENANT_ID
     ,
     # The app registration's client ID (GUID).
+    # Defaults to $env:NPSBOX_CLIENT_ID if set.  Use Set-NPSBoxEnv.ps1 to persist.
     [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
     [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
-    [string] $ClientId
+    [string] $ClientId = $env:NPSBOX_CLIENT_ID
     ,
     # Certificate thumbprint for app-only auth.
+    # Defaults to $env:NPSBOX_CERT_THUMBPRINT if set.  Use Set-NPSBoxEnv.ps1 to persist.
     [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
     [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
-    [string] $CertificateThumbprint
+    [string] $CertificateThumbprint = $env:NPSBOX_CERT_THUMBPRINT
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
     [Parameter(ParameterSetName = 'Run')]
