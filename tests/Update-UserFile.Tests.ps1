@@ -35,6 +35,7 @@ Describe 'Update-UserFile.ps1' {
         function Assert-GraphPermissions { }
         function Assert-CsvColumns { }
         function Get-ValidatedUserDrive { }
+        function Get-AppPermissionDetail { return @() }
         function Invoke-OneDriveUpload { }
         function Test-CollaboratorDomain { return $true }
         function Test-EmailFormat { return $true }
@@ -1597,6 +1598,12 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { return 'Verified' }
             Mock -CommandName 'Assert-CsvColumns' -MockWith { }
+            Mock -CommandName 'Get-AppPermissionDetail' -MockWith {
+                return @(
+                    [PSCustomObject]@{ Permission = 'Files.ReadWrite.All'; Type = 'Application'; IsGranted = $true; RoleId = 'guid-1'; GrantedOn = '2026-01-01'; AppId = $script:DefaultClientId; TenantId = $script:DefaultTenantId; DisplayName = 'TestApp' },
+                    [PSCustomObject]@{ Permission = 'User.Read.All'; Type = 'Application'; IsGranted = $true; RoleId = 'guid-2'; GrantedOn = '2026-01-01'; AppId = $script:DefaultClientId; TenantId = $script:DefaultTenantId; DisplayName = 'TestApp' }
+                )
+            }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -1609,12 +1616,13 @@ Describe 'Update-UserFile.ps1' {
             } 6>&1
 
             $stepResults = $results | Where-Object { $_.Test -eq $true -and $_.Step -ne 'Overall' }
-            $stepResults.Count | Should -Be 4
+            $stepResults.Count | Should -Be 5
 
             ($stepResults | Where-Object { $_.Step -eq 'Assembly compatibility' }).Status | Should -Be 'Passed'
             ($stepResults | Where-Object { $_.Step -eq 'Required modules' }).Status | Should -Be 'Passed'
             ($stepResults | Where-Object { $_.Step -eq 'Certificate authentication' }).Status | Should -Be 'Passed'
             ($stepResults | Where-Object { $_.Step -eq 'Permission validation' }).Status | Should -Be 'Passed'
+            ($stepResults | Where-Object { $_.Step -eq 'Permission detail' }).Status | Should -Be 'Passed'
         }
 
         It 'should emit Overall Passed when all steps pass' {
@@ -1713,6 +1721,54 @@ Describe 'Update-UserFile.ps1' {
             Should -Invoke -CommandName 'Get-MgUser' -Times 0 -Exactly
             Should -Invoke -CommandName 'Get-MgUserDrive' -Times 0 -Exactly
             Should -Invoke -CommandName 'Invoke-MgGraphRequest' -Times 0 -Exactly
+        }
+
+        It 'should emit per-permission detail objects when -Test succeeds' {
+            $results = & {
+                . $script:ScriptUnderTest -Test `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $permResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Permission' }
+            $permResults.Count | Should -Be 2
+            ($permResults | Where-Object { $_.Permission -eq 'Files.ReadWrite.All' }).IsGranted | Should -Be $true
+            ($permResults | Where-Object { $_.Permission -eq 'User.Read.All' }).IsGranted | Should -Be $true
+        }
+
+        It 'should report Permission detail as Failed when a permission is not granted' {
+            Mock -CommandName 'Get-AppPermissionDetail' -MockWith {
+                return @(
+                    [PSCustomObject]@{ Permission = 'Files.ReadWrite.All'; Type = 'Application'; IsGranted = $true; RoleId = 'guid-1'; GrantedOn = '2026-01-01'; AppId = $script:DefaultClientId; TenantId = $script:DefaultTenantId; DisplayName = 'TestApp' },
+                    [PSCustomObject]@{ Permission = 'User.Read.All'; Type = 'Application'; IsGranted = $false; RoleId = $null; GrantedOn = $null; AppId = $script:DefaultClientId; TenantId = $script:DefaultTenantId; DisplayName = 'TestApp' }
+                )
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -Test `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $detailStep = $results | Where-Object { $_.Step -eq 'Permission detail' }
+            $detailStep.Status | Should -Be 'Failed'
+            $detailStep.Detail | Should -Match 'User\.Read\.All'
+
+            $permResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Permission' }
+            ($permResults | Where-Object { $_.Permission -eq 'User.Read.All' }).IsGranted | Should -Be $false
+        }
+
+        It 'should report Permission detail as Skipped when service principal lookup fails' {
+            Mock -CommandName 'Get-AppPermissionDetail' -MockWith {
+                throw 'Insufficient privileges to complete the operation.'
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -Test `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $detailStep = $results | Where-Object { $_.Step -eq 'Permission detail' }
+            $detailStep.Status | Should -Be 'Skipped'
+            $detailStep.Detail | Should -Match 'Insufficient privileges'
         }
 
         It 'should fail when Assert-RequiredModules throws with -Test' {

@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.1
+    Version: 1.2.2.2
     Date:    2026-05-05
 
 .DESCRIPTION
@@ -1122,6 +1122,75 @@ begin
         return 'Verified'
     } # function Assert-GraphPermissions
 
+    # ── Get-AppPermissionDetail ──────────────────────────────────────────────────
+    # Resolves the app's service principal in the tenant and checks each required
+    # Graph application permission individually.  Returns an array of result objects
+    # with per-permission grant status — the same detail as Test-AzureAppRegistration.ps1.
+    #
+    # Used by -Test mode to provide granular permission reporting.
+    # https://learn.microsoft.com/graph/api/serviceprincipal-list-approleassignments
+    function Get-AppPermissionDetail
+    {
+        [CmdletBinding()]
+        param()
+
+        $requiredPermissions = @('Files.ReadWrite.All', 'User.Read.All')
+        $results = [System.Collections.Generic.List[pscustomobject]]::new()
+
+        # Resolve the app's service principal.
+        Write-LogLine -Message ("Looking up service principal for ClientId={0}" -f $ClientId)
+        $appSp = Get-MgServicePrincipal -Filter "appId eq '$ClientId'" -ErrorAction Stop
+        if ($null -eq $appSp)
+        {
+            throw ("Service principal not found for ClientId '{0}'. Ensure the app registration exists in tenant '{1}'." -f $ClientId, $TenantId)
+        } # if
+
+        # Resolve the Microsoft Graph service principal.
+        Write-LogLine -Message "Looking up Microsoft Graph service principal."
+        $graphSp = Get-MgServicePrincipal -Filter "displayName eq 'Microsoft Graph'" -ErrorAction Stop
+        if ($null -eq $graphSp)
+        {
+            throw "Could not find the 'Microsoft Graph' service principal in the tenant."
+        } # if
+
+        # Get granted app role assignments.
+        Write-LogLine -Message "Retrieving app role assignments for the service principal."
+        $appRoleAssignments = @(Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $appSp.Id -ErrorAction Stop)
+
+        $grantedRoleIds = @{}
+        foreach ($assignment in $appRoleAssignments)
+        {
+            $grantedRoleIds[$assignment.AppRoleId] = $assignment
+        } # foreach
+
+        # Check each required permission.
+        foreach ($permName in $requiredPermissions)
+        {
+            $roleDef    = $graphSp.AppRoles | Where-Object { $_.Value -eq $permName } | Select-Object -First 1
+            $assignment = $null
+            $isGranted  = $false
+
+            if ($null -ne $roleDef -and $grantedRoleIds.ContainsKey($roleDef.Id))
+            {
+                $isGranted  = $true
+                $assignment = $grantedRoleIds[$roleDef.Id]
+            } # if
+
+            $results.Add([pscustomobject]@{
+                Permission  = $permName
+                Type        = 'Application'
+                IsGranted   = $isGranted
+                RoleId      = if ($null -ne $roleDef) { $roleDef.Id } else { $null }
+                GrantedOn   = if ($null -ne $assignment) { $assignment.CreatedDateTime } else { $null }
+                AppId       = $ClientId
+                TenantId    = $TenantId
+                DisplayName = $appSp.DisplayName
+            })
+        } # foreach
+
+        return $results
+    } # function Get-AppPermissionDetail
+
     # ── Get-ValidatedUserDrive ────────────────────────────────────────────────────
     # Looks up a user's OneDrive drive via Microsoft Graph, validates the response,
     # and confirms the drive root is accessible.  Returns a custom object with the
@@ -1351,6 +1420,31 @@ begin
         throw
     } # catch
 
+    # Step 5: Per-permission detail (same as Test-AzureAppRegistration.ps1)
+    # Only runs in -Test mode and only when we can query the service principal.
+    $script:PermissionDetails = $null
+    if ($Test)
+    {
+        try
+        {
+            $script:PermissionDetails = Get-AppPermissionDetail
+            $allGranted = ($script:PermissionDetails | Where-Object { -not $_.IsGranted }).Count -eq 0
+            if ($allGranted)
+            {
+                $script:TestStepResults.Add([pscustomobject]@{ Step = 'Permission detail'; Status = 'Passed'; Detail = 'All required permissions are granted.' })
+            } # if
+            else
+            {
+                $missing = ($script:PermissionDetails | Where-Object { -not $_.IsGranted }).Permission -join ', '
+                $script:TestStepResults.Add([pscustomobject]@{ Step = 'Permission detail'; Status = 'Failed'; Detail = "Missing permissions: $missing" })
+            } # else
+        } # try
+        catch
+        {
+            $script:TestStepResults.Add([pscustomobject]@{ Step = 'Permission detail'; Status = 'Skipped'; Detail = $_.Exception.Message })
+        } # catch
+    } # if
+
     # ── Test mode: verify auth and access, then exit ─────────────────────────
     # When -Test is specified, the script validates that authentication and
     # permissions are in order but does not process any CSV data.
@@ -1406,6 +1500,15 @@ process
                 Detail = $stepResult.Detail
             }
         } # foreach — step result
+
+        # Emit per-permission detail (same data as Test-AzureAppRegistration.ps1).
+        if ($null -ne $script:PermissionDetails)
+        {
+            foreach ($perm in $script:PermissionDetails)
+            {
+                $perm
+            } # foreach — permission detail
+        } # if
 
         [pscustomobject]@{
             Test   = $true
