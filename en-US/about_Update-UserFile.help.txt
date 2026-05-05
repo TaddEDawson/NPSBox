@@ -1,0 +1,139 @@
+TOPIC
+    about_Update-UserFile
+
+SHORT DESCRIPTION
+    Migrates Box collaboration permissions to OneDrive for Business using
+    Microsoft Graph.
+
+LONG DESCRIPTION
+    Update-UserFile.ps1 reads a CSV file that describes Box sharing
+    permissions (who has access to what, and at what level) and recreates
+    those same permissions on the corresponding OneDrive for Business items
+    using the Microsoft Graph API.
+
+    The script can also upload local files to each user's OneDrive before
+    applying permissions.
+
+  HOW IT WORKS
+
+    1. Authenticates to Microsoft Graph using certificate-based app-only auth.
+    2. Reads the CSV and groups rows by owner (the file owner's UPN).
+    3. Resolves each owner's OneDrive drive via the Graph API.
+    4. Optionally uploads local files/folders to OneDrive (-UploadFiles).
+    5. For each CSV row, resolves the item by path in OneDrive, then grants
+       the collaborator the appropriate permission (read or write) using the
+       driveItem: invite API.
+    6. Outputs a structured result object per row to the pipeline.
+
+  PARAMETER SETS
+
+    Help (default — no parameters):
+        Displays this help topic.
+
+    Run (requires -TenantId, -ClientId, -CertificateThumbprint):
+        Processes the CSV and applies permissions.
+
+    Test (requires -Test, -TenantId, -ClientId, -CertificateThumbprint):
+        Validates authentication and access only; does not process CSV data.
+
+  PREREQUISITES
+
+    - PowerShell 7.0 or later
+    - Microsoft Graph PowerShell SDK modules:
+        Install-Module Microsoft.Graph.Authentication -Scope CurrentUser
+        Install-Module Microsoft.Graph.Users          -Scope CurrentUser
+        Install-Module Microsoft.Graph.Files          -Scope CurrentUser
+        Install-Module Microsoft.Graph.Applications   -Scope CurrentUser
+    - An Azure AD App Registration with Application permissions:
+        Files.ReadWrite.All   (read/write all users' OneDrive files)
+        User.Read.All         (look up user accounts)
+        Application.Read.All  (optional — enables permission validation)
+    - A certificate uploaded to the app registration and installed in
+      Cert:\CurrentUser\My on the machine running the script.
+
+  BOX ROLE MAPPING
+
+    Box Permission        Graph Role    Effect
+    ─────────────────     ──────────    ──────────────────
+    Co-owner              write         View + edit access
+    Editor                write         View + edit access
+    Viewer Uploader       read          View-only access
+    Viewer                read          View-only access
+    Previewer Uploader    (skipped)     No Graph equivalent
+    Previewer             (skipped)     No Graph equivalent
+    Uploader              (skipped)     No Graph equivalent
+
+  CSV FORMAT
+
+    The input CSV must contain these columns (exact names, case-sensitive):
+
+        Owner Login              UPN of the file owner
+        Path                     Box path (e.g. "All Files/Documents")
+        Item Name                File or folder name
+        Collaborator Login       UPN of the person to share with
+        Collaborator Permission  Box role (Editor, Viewer, Co-owner, etc.)
+
+  SAFETY
+
+    -WhatIf    Shows what would happen without making changes.
+    -Confirm   Prompts for confirmation before each change.
+    -Verbose   Shows detailed progress messages.
+
+    The -AllowedDomains parameter restricts sharing to specified email
+    domains, preventing accidental external access.
+
+EXAMPLES
+    # Show this help (no parameters):
+    .\Update-UserFile.ps1
+
+    # Dry-run for a specific user:
+    .\Update-UserFile.ps1 -InputFile .\UserInfo.csv `
+        -UserToProcess user@contoso.com `
+        -TenantId '<tenant-guid>' `
+        -ClientId '<app-guid>' `
+        -CertificateThumbprint '<thumbprint>' `
+        -Verbose -WhatIf
+
+    # Apply permissions for all users in the CSV:
+    .\Update-UserFile.ps1 -InputFile .\UserInfo.csv `
+        -TenantId '<tenant-guid>' `
+        -ClientId '<app-guid>' `
+        -CertificateThumbprint '<thumbprint>' `
+        -AllowedDomains @('contoso.com') `
+        -Verbose
+
+    # Upload files and apply permissions:
+    .\Update-UserFile.ps1 -InputFile .\UserInfo.csv `
+        -TenantId '<tenant-guid>' `
+        -ClientId '<app-guid>' `
+        -CertificateThumbprint '<thumbprint>' `
+        -UploadFiles -Verbose
+
+    # Pre-flight validation only:
+    .\Update-UserFile.ps1 -Test `
+        -TenantId '<tenant-guid>' `
+        -ClientId '<app-guid>' `
+        -CertificateThumbprint '<thumbprint>' `
+        -Verbose
+
+    # Pipe multiple users:
+    'user1@contoso.com', 'user2@contoso.com' |
+        .\Update-UserFile.ps1 -InputFile .\UserInfo.csv `
+            -TenantId '<tenant-guid>' `
+            -ClientId '<app-guid>' `
+            -CertificateThumbprint '<thumbprint>' `
+            -Verbose
+
+    # Export failures to CSV:
+    $results = .\Update-UserFile.ps1 -InputFile .\UserInfo.csv `
+        -TenantId '<tenant-guid>' `
+        -ClientId '<app-guid>' `
+        -CertificateThumbprint '<thumbprint>'
+    $results | Where-Object Status -eq 'Failed' | Export-Csv failures.csv
+
+SEE ALSO
+    Update-UserFile.ps1
+    Test-AzureAppRegistration.ps1
+    assumptions.md
+    https://learn.microsoft.com/graph/api/driveitem-invite
+    https://learn.microsoft.com/powershell/microsoftgraph/overview

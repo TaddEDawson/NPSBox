@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.0
+    Version: 1.2.2.1
     Date:    2026-05-05
 
 .DESCRIPTION
@@ -164,64 +164,70 @@
 #   is Medium or lower (the default).
 # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_cmdletbindingattribute
 # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_methods#shouldprocess
-[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium', DefaultParameterSetName = 'Help')]
 param
 (
     # Path to the input CSV file.  [System.IO.FileInfo] automatically resolves
     # the string to a file object with .Exists, .FullName, etc.
-    [Parameter()]
+    [Parameter(ParameterSetName = 'Run')]
+    [Parameter(ParameterSetName = 'Test')]
     [System.IO.FileInfo] $InputFile = "C:\Repos\NPSBox\UserInfo.csv"
     ,
     # The owner's UPN to filter on in the CSV.
     # ValueFromPipeline lets you pipe UPNs:  'user1@contoso.com','user2@contoso.com' | .\Update-UserFile.ps1
     # Alias allows matching CSV column names directly for pipeline binding.
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_parameters#alias-attribute
-    [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+    [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Run')]
+    [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Test')]
     [Alias('Owner Login', 'User', 'UPN', 'Account')]
     [string] $UserToProcess
     ,
     # Your tenant ID (GUID).  Find it: Azure Portal > Entra ID > Overview.
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
     [string] $TenantId
     ,
     # The app registration's client ID (GUID).
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
     [string] $ClientId
     ,
     # Certificate thumbprint for app-only auth.
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
     [string] $CertificateThumbprint
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
-    [Parameter()]
+    [Parameter(ParameterSetName = 'Run')]
+    [Parameter(ParameterSetName = 'Test')]
     [string] $LogFolder = "C:\Repos\NPSBox\Logs"
     ,
     # Root folder with per-user subfolders of files to upload.
     # Subfolder names must match the user's UPN exactly.
-    [Parameter()]
+    [Parameter(ParameterSetName = 'Run')]
     [string] $AllFilesDirectory = "C:\Repos\NPSBox\LocalFiles"
     ,
     # Include this switch to upload local files to OneDrive before applying permissions.
     # A switch parameter is either present ($true) or absent ($false) — no value needed.
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_switch
-    [Parameter()]
+    [Parameter(ParameterSetName = 'Run')]
     [switch] $UploadFiles
     ,
     # Optional list of allowed email domains for collaborators.
     # When specified, collaborators whose domain is not in this list are skipped
     # with a warning instead of being granted access.  Prevents accidental
     # external sharing.  Example: @('contoso.com', 'contoso.onmicrosoft.com')
-    [Parameter()]
+    [Parameter(ParameterSetName = 'Run')]
     [string[]] $AllowedDomains
     ,
     # When present, verifies authentication and access requirements only.
     # The script authenticates to Microsoft Graph, asserts required modules,
     # checks assembly compatibility, validates app permissions, and then exits
     # without processing any CSV rows.  Useful for pre-flight validation.
-    [Parameter()]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
     [switch] $Test
 )
 
@@ -233,6 +239,26 @@ param
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 begin
 {
+    # ── Help mode: show help and exit when no parameters are provided ────────
+    # DefaultParameterSetName = 'Help' activates when no params are supplied.
+    # Display the about_ help topic and return immediately.
+    $script:HelpModeActive = $false
+    if ($PSCmdlet.ParameterSetName -eq 'Help')
+    {
+        $aboutFile = Join-Path -Path $PSScriptRoot -ChildPath 'en-US' |
+            Join-Path -ChildPath 'about_Update-UserFile.help.txt'
+        if (Test-Path -LiteralPath $aboutFile)
+        {
+            Get-Content -LiteralPath $aboutFile -Raw | Write-Output
+        } # if
+        else
+        {
+            Get-Help -Name $PSCommandPath -Detailed
+        } # else
+        $script:HelpModeActive = $true
+        return
+    } # if — Help mode
+
     # ── Write-LogLine ────────────────────────────────────────────────────────────
     # Writes a timestamped message to both the Verbose stream and a log file.
     # Write-Verbose sends output to the verbose stream (visible only with -Verbose).
@@ -1360,6 +1386,9 @@ begin
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 process
 {
+    # ── Help mode: skip all processing ────────────────────────────────────────
+    if ($script:HelpModeActive) { return }
+
     # ── Test mode: skip all CSV processing ────────────────────────────────────
     if ($script:TestModeActive)
     {
@@ -1689,6 +1718,8 @@ process
 # ╚═══════════════════════════════════════════════════════════════════════════════╝
 end
 {
+    if ($script:HelpModeActive) { return }
+
     try
     {
         # Disconnect-MgGraph signs out of Microsoft Graph.

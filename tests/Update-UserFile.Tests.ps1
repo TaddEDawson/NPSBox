@@ -2036,6 +2036,51 @@ Describe 'Update-UserFile.ps1' {
             $mandatory | Should -Not -BeNullOrEmpty
         }
     }
+
+    Context 'Help Mode - No Parameters' {
+        It 'should output help text when no parameters are supplied' {
+            # Create en-US folder with about_ topic next to the test copy
+            $helpDir = Join-Path -Path $TestDrive -ChildPath 'en-US'
+            New-Item -Path $helpDir -ItemType Directory -Force | Out-Null
+            $helpFile = Join-Path -Path $helpDir -ChildPath 'about_Update-UserFile.help.txt'
+            Set-Content -LiteralPath $helpFile -Value 'TOPIC about_Update-UserFile' -Encoding UTF8
+
+            $output = & {
+                . $script:ScriptUnderTest
+            } 6>&1
+
+            $output | Should -Not -BeNullOrEmpty
+            ($output -join "`n") | Should -Match 'about_Update-UserFile'
+        }
+
+        It 'should not call any Graph functions when no parameters are supplied' {
+            $helpDir = Join-Path -Path $TestDrive -ChildPath 'en-US'
+            New-Item -Path $helpDir -ItemType Directory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $helpDir 'about_Update-UserFile.help.txt') -Value 'TOPIC about_Update-UserFile' -Encoding UTF8
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+
+            & { . $script:ScriptUnderTest } 6>&1 | Out-Null
+
+            Should -Invoke -CommandName 'Assert-RequiredModules' -Times 0 -Exactly
+            Should -Invoke -CommandName 'Connect-GraphCertAuth' -Times 0 -Exactly
+        }
+
+        It 'should fall back to Get-Help when about_ file is missing' {
+            # Ensure no en-US folder exists
+            $helpDir = Join-Path -Path $TestDrive -ChildPath 'en-US'
+            if (Test-Path $helpDir) { Remove-Item $helpDir -Recurse -Force }
+
+            $output = & {
+                . $script:ScriptUnderTest
+            } 6>&1
+
+            # Get-Help -Detailed output should contain the synopsis
+            $output | Should -Not -BeNullOrEmpty
+        }
+    }
 }
 
 
