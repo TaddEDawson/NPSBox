@@ -1513,8 +1513,9 @@ process
             if ([string]::IsNullOrWhiteSpace($collab))    { $emptyFields += 'Collaborator Login' }
             if ([string]::IsNullOrWhiteSpace($boxPerm))   { $emptyFields += 'Collaborator Permission' }
 
-            # Map the Box permission to a Graph role (read/write/null).
-            $graphRole = ConvertTo-GraphRole -BoxPermission $boxPerm
+            # Defer ConvertTo-GraphRole until after empty-cell validation so
+            # that an empty Collaborator Permission gets a unified error.
+            $graphRole = if ([string]::IsNullOrWhiteSpace($boxPerm)) { $null } else { ConvertTo-GraphRole -BoxPermission $boxPerm }
 
             # Create a result object to track what happens with this row.
             # [pscustomobject] is a lightweight object with named properties.

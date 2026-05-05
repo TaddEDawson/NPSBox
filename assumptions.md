@@ -1,7 +1,7 @@
 # Assumptions & Constraints Audit
 
 Reviewed: 2026-05-05
-Script: `Update-UserFile.ps1` v1.2.1.0
+Script: `Update-UserFile.ps1` v1.2.2.0
 
 ---
 
@@ -11,10 +11,10 @@ Script: `Update-UserFile.ps1` v1.2.1.0
 |---|---------|------|--------|
 | S1 | **No collaborator domain validation** — CSV `Collaborator Login` goes directly into the invite API `recipients.email`. External addresses (e.g., `someone@gmail.com`) silently grant OneDrive access to external users. | **High** | Fixed in v1.2.0.2 — `Test-CollaboratorDomain` validates against `-AllowedDomains` parameter. |
 | S2 | **`Files.ReadWrite.All` application permission** — Grants the app read/write to every user's OneDrive. A compromised certificate = full tenant file access. | Info | Documented (infrastructure control). `Assert-GraphPermissions` verifies the permission is granted. |
-| S3 | **Hardcoded infrastructure identifiers** — `TenantId`, `ClientId`, `CertificateThumbprint` in param defaults reveal the app registration and tenant. | Low | Documented (convenience defaults) |
+| S3 | **Hardcoded infrastructure identifiers** — `TenantId`, `ClientId`, `CertificateThumbprint` previously had dev/test defaults in the param block. Operators could accidentally run against the wrong tenant. | Low | Fixed in v1.2.2.0 — All three parameters are now `[Parameter(Mandatory)]` with `[ValidateNotNullOrEmpty()]`. No defaults. |
 | S4 | **Silent permission grants** — `sendInvitation = $false`, `requireSignIn = $true` means collaborators receive no notification but must sign in to access items. | Info | By design |
 | S5 | **Domain validation is case-insensitive** — Domain extracted after `@` and lowercased before comparison to `AllowedDomains`. `CONTOSO.COM` matches `contoso.com`. | Low | By design |
-| S6 | **No RFC 5322 email validation** — Collaborator Login is checked for `@` to extract domain. Strings without `@` (e.g., `notanemail`) cause the row to be skipped. No full email format validation. | Low | Documented |
+| S6 | **No RFC 5322 email validation** — `Test-EmailFormat` validates that Collaborator Login matches a basic email regex (`local@domain.tld`). Strings without `@` or without a domain dot (e.g., `notanemail`, `user@nodot`) are skipped with `Status='Skipped'`. Not a full RFC 5322 implementation. | Low | Fixed in v1.2.2.0 |
 | S7 | **Certificate must be in `Cert:\CurrentUser\My`** — If the certificate with the specified thumbprint is not found in the user's personal cert store, `Connect-MgGraph` may silently fall back to delegated (interactive) auth, which lacks required application permissions. Validation catches this. | **High** | Documented (validated at startup) |
 | S8 | **PnP.PowerShell loaded = terminating error** — Script checks for PnP.PowerShell in the same session and throws before any Graph calls. Known assembly conflict between Graph SDK v2 (3.x) and PnP's `Microsoft.Graph.Core` v1.x. Must run in a clean `pwsh` session. | **High** | By design — `Assert-GraphAssemblyCompatibility` enforces. |
 | S9 | **`Connect-Graph` alias collision** — `Microsoft.Graph.Authentication` exports `Connect-Graph` as an alias for `Connect-MgGraph`. PowerShell resolves aliases before functions, so a script function named `Connect-Graph` is silently shadowed after module import. The bare alias invokes `Connect-MgGraph` with no parameters, falling back to delegated auth (wrong ClientId, insufficient permissions). All Graph calls fail with `Authorization_RequestDenied`. | **Critical** | Fixed in v1.2.0.17 — Renamed function to `Connect-GraphCertAuth`. |
@@ -39,7 +39,7 @@ Script: `Update-UserFile.ps1` v1.2.1.0
 | T1 | **Retry ignores `Retry-After` header** — Graph 429 responses include `Retry-After` specifying exactly how long to wait. Script uses its own exponential backoff instead. | **High** | Fixed in v1.2.0.3 — `Get-RetryAfterSeconds` parses the `Retry-After` header and honors it in the retry loop. |
 | T2 | **Max retry window too short** — 4 attempts × exponential backoff ≈ 30 s. Graph can throttle for minutes under load. | **Medium** | Fixed in v1.2.0.7 — increased to 6 attempts, `MaxDelaySeconds = 60`. |
 | T3 | **No proactive self-throttling** — Requests fire as fast as possible, virtually guaranteeing 429s for large CSVs. | Low | Documented (future enhancement) |
-| T4 | **Max retry delay capped at 60 seconds** — Exponential backoff stops at 60 s even if `Retry-After` header says 120 s. Very long throttle windows may exhaust all 6 attempts. | Low | Documented |
+| T4 | **Retry-After honored without cap** — `Invoke-WithGraphRetry` now uses the `Retry-After` value from Graph 429 responses directly, without capping at `MaxDelaySeconds`. Exponential backoff is still capped. This prevents premature retry exhaustion under heavy throttling. | Low | Fixed in v1.2.2.0 |
 | T5 | **Transient errors detected by regex pattern matching** — Retry logic uses regex on error messages (`timeout|throttl|too many requests|429|5\d{2}|…`). Non-retryable errors (403 Forbidden, 404 Not Found) are not retried; retryable errors (500, timeout) trigger backoff. Changes in Graph SDK error message formatting could break detection. | Medium | Tested in v1.2.1.0 |
 
 ## Data & Idempotency
@@ -50,8 +50,8 @@ Script: `Update-UserFile.ps1` v1.2.1.0
 | D2 | **No idempotency on re-runs** — Re-running re-grants every permission without checking existing roles. | Low | Documented (future enhancement) |
 | D3 | **Folder `conflictBehavior = 'replace'`** — Overwrites folder metadata on every upload, even if folder exists. | Low | Documented (by design for migration) |
 | D4 | **No permission role update** — If a permission already exists with a different role (e.g., `read`), re-granting with `write` may create a second permission instead of updating. The invite API is idempotent for exact matches, not for role changes. | Medium | Documented (future enhancement) |
-| D5 | **CSV column names must match exactly** — Script expects: `'Owner Login'`, `'Path'`, `'Item Name'`, `'Collaborator Login'`, `'Collaborator Permission'`. Misspelled or renamed columns cause null reference errors. | **High** | Documented |
-| D6 | **Empty/whitespace cells cause row skip or fail** — Empty `Owner Login` is filtered out; empty `Collaborator Login` throws; empty `Path` throws. No unified empty-cell handling. | Medium | Documented |
+| D5 | **CSV column names validated at startup** — `Assert-CsvColumns` checks that all required columns (`Owner Login`, `Path`, `Item Name`, `Collaborator Login`, `Collaborator Permission`) exist in the CSV header. Throws with a clear message listing missing and found columns. | **High** | Fixed in v1.2.2.0 |
+| D6 | **Unified empty-cell handling** — All required row fields (`Path`, `Item Name`, `Collaborator Login`, `Collaborator Permission`) are validated at once before processing. Empty or whitespace cells produce a single error listing all missing fields. | Medium | Fixed in v1.2.2.0 |
 | D7 | **Deduplication matches on 4-tuple key** — Duplicates identified by `(Path, ItemName, CollaboratorLogin, CollaboratorPermission)`. Same collaborator granted a different role on the same item is kept (not merged). | Low | By design |
 
 ## Infrastructure
@@ -73,7 +73,7 @@ Script: `Update-UserFile.ps1` v1.2.1.0
 |---|---------|------|--------|
 | U1 | **Local folder must be named by user's UPN** — e.g., `AllFilesDirectory\user@contoso.com\`. If the folder doesn't exist, `Invoke-OneDriveUpload` throws and the error is logged. The owner's permission rows are still processed. | **Medium** | By design — `Test-Path` guard throws with a clear message. |
 | U2 | **Only simple upload for files ≤ 4 MB** — Resumable upload (for files > 4 MB) is not implemented. Files exceeding the limit throw with a clear message. | **High** | Documented (P1 guard enforces) |
-| U3 | **Folders created with PATCH (undocumented)** — Folders created via `PATCH` to `root:/{path}` with `{ folder: {}, conflictBehavior: 'replace' }`. The [documented method](https://learn.microsoft.com/graph/api/driveitem-post-children) is `POST` to the parent's `/children` collection. PATCH-with-folder-body works as an undocumented upsert but is not guaranteed by the API contract. The `replace` conflict behavior on folders may delete and recreate the folder, **potentially losing existing child files**. | **High** | Documented — consider switching to `POST` with `conflictBehavior: fail` + 409 handling. |
+| U3 | **Folders created with documented POST method** — Folders created via `POST` to the parent's `/children` collection with `conflictBehavior: 'fail'`. 409 Conflict (folder already exists) is caught and treated as success. Uses the [documented API](https://learn.microsoft.com/graph/api/driveitem-post-children). | **High** | Fixed in v1.2.2.0 |
 | U5 | **`Assert-GraphPermissions` requires `Application.Read.All`** — The permission check queries `Get-MgServicePrincipal` which requires `Application.Read.All`. This permission is not listed as a prerequisite. Without it, the check is silently skipped (WARN logged). The script still functions; only the pre-flight permission validation is lost. | **Medium** | Documented — non-blocking (graceful fallback). |
 | U4 | **Folder processing order: depth-first by path length** — Folders sorted by `FullName.Length` so parent folders are created before children. Prevents children-before-parent failures. | Low | By design |
 
