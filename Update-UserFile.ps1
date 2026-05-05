@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.1.1
+    Version: 1.2.1.2
     Date:    2026-05-05
 
 .DESCRIPTION
@@ -939,13 +939,13 @@ begin
         catch
         {
             Write-LogLine -Level 'WARN' -Message ("Could not look up service principal for ClientId '{0}': {1}. Skipping permission check." -f $ClientId, $_.Exception.Message)
-            return
+            return 'Skipped'
         } # catch
 
         if ($null -eq $appSp)
         {
             Write-LogLine -Level 'WARN' -Message ("Service principal not found for ClientId '{0}'. Skipping permission check." -f $ClientId)
-            return
+            return 'Skipped'
         } # if
 
         # Resolve the Microsoft Graph service principal.
@@ -957,13 +957,13 @@ begin
         catch
         {
             Write-LogLine -Level 'WARN' -Message ("Could not look up Microsoft Graph service principal: {0}. Skipping permission check." -f $_.Exception.Message)
-            return
+            return 'Skipped'
         } # catch
 
         if ($null -eq $graphSp)
         {
             Write-LogLine -Level 'WARN' -Message "Microsoft Graph service principal not found. Skipping permission check."
-            return
+            return 'Skipped'
         } # if
 
         # Get granted app role assignments.
@@ -975,7 +975,7 @@ begin
         catch
         {
             Write-LogLine -Level 'WARN' -Message ("Could not retrieve app role assignments: {0}. Skipping permission check." -f $_.Exception.Message)
-            return
+            return 'Skipped'
         } # catch
 
         $grantedRoleIds = @{}
@@ -1005,6 +1005,7 @@ begin
         } # if
 
         Write-LogLine -Message ("All required Graph permissions verified for app '{0}'." -f $appSp.DisplayName)
+        return 'Verified'
     } # function Assert-GraphPermissions
 
     # ── Get-ValidatedUserDrive ────────────────────────────────────────────────────
@@ -1172,17 +1173,76 @@ begin
         Write-Warning "Logging setup failed: $($_.Exception.Message)"
     } # catch
 
-    Assert-GraphAssemblyCompatibility   # Check for PnP.PowerShell conflicts
-    Assert-RequiredModules              # Import Graph SDK modules
-    Connect-GraphCertAuth               # Authenticate to Microsoft Graph
-    Assert-GraphPermissions             # Verify required app permissions
+    # ── Run validation steps, collecting per-step results for -Test mode ────
+    # Each step is tracked with a status (Passed / Failed / Skipped) so that
+    # -Test can emit granular output showing exactly what was checked.
+    # In normal (non-Test) mode, failures still throw as before.
+    $script:TestStepResults = [System.Collections.Generic.List[pscustomobject]]::new()
+
+    # Step 1: Assembly compatibility
+    try
+    {
+        Assert-GraphAssemblyCompatibility
+        $script:TestStepResults.Add([pscustomobject]@{ Step = 'Assembly compatibility'; Status = 'Passed'; Detail = $null })
+    } # try
+    catch
+    {
+        $script:TestStepResults.Add([pscustomobject]@{ Step = 'Assembly compatibility'; Status = 'Failed'; Detail = $_.Exception.Message })
+        throw
+    } # catch
+
+    # Step 2: Required modules
+    try
+    {
+        Assert-RequiredModules
+        $script:TestStepResults.Add([pscustomobject]@{ Step = 'Required modules'; Status = 'Passed'; Detail = $null })
+    } # try
+    catch
+    {
+        $script:TestStepResults.Add([pscustomobject]@{ Step = 'Required modules'; Status = 'Failed'; Detail = $_.Exception.Message })
+        throw
+    } # catch
+
+    # Step 3: Certificate authentication
+    try
+    {
+        Connect-GraphCertAuth
+        $script:TestStepResults.Add([pscustomobject]@{ Step = 'Certificate authentication'; Status = 'Passed'; Detail = $null })
+    } # try
+    catch
+    {
+        $script:TestStepResults.Add([pscustomobject]@{ Step = 'Certificate authentication'; Status = 'Failed'; Detail = $_.Exception.Message })
+        throw
+    } # catch
+
+    # Step 4: Permission validation
+    # Assert-GraphPermissions returns 'Verified' on success, 'Skipped' when it
+    # cannot query the service principal (e.g. missing Application.Read.All),
+    # and throws when permissions are confirmed missing.
+    try
+    {
+        $permResult = Assert-GraphPermissions
+        if ($permResult -eq 'Skipped')
+        {
+            $script:TestStepResults.Add([pscustomobject]@{ Step = 'Permission validation'; Status = 'Skipped'; Detail = 'Could not verify permissions. Grant Application.Read.All to enable this check.' })
+        } # if
+        else
+        {
+            $script:TestStepResults.Add([pscustomobject]@{ Step = 'Permission validation'; Status = 'Passed'; Detail = $null })
+        } # else
+    } # try
+    catch
+    {
+        $script:TestStepResults.Add([pscustomobject]@{ Step = 'Permission validation'; Status = 'Failed'; Detail = $_.Exception.Message })
+        throw
+    } # catch
 
     # ── Test mode: verify auth and access, then exit ─────────────────────────
     # When -Test is specified, the script validates that authentication and
     # permissions are in order but does not process any CSV data.
     if ($Test)
     {
-        Write-LogLine -Message "Test mode: authentication and access verification completed successfully."
+        Write-LogLine -Message "Test mode: authentication and access verification completed."
         $script:TestModeActive = $true
     } # if
     else
@@ -1212,10 +1272,26 @@ process
     # ── Test mode: skip all CSV processing ────────────────────────────────────
     if ($script:TestModeActive)
     {
+        # Determine the overall status from the per-step results.
+        # If any step was skipped, the overall status reflects that.
+        $hasSkipped = $script:TestStepResults | Where-Object { $_.Status -eq 'Skipped' }
+        $overallStatus = if ($hasSkipped) { 'Passed with warnings' } else { 'Passed' }
+
+        foreach ($stepResult in $script:TestStepResults)
+        {
+            [pscustomobject]@{
+                Test   = $true
+                Step   = $stepResult.Step
+                Status = $stepResult.Status
+                Detail = $stepResult.Detail
+            }
+        } # foreach — step result
+
         [pscustomobject]@{
             Test   = $true
-            Status = 'Passed'
-            Detail = 'Authentication and access verification completed successfully.'
+            Step   = 'Overall'
+            Status = $overallStatus
+            Detail = '{0} step(s) checked.' -f $script:TestStepResults.Count
         }
         return
     } # if
