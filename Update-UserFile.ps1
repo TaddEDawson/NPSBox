@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.15
+    Version: 1.2.0.16
     Date:    2026-04-29
 
 .DESCRIPTION
@@ -1064,8 +1064,8 @@ begin
         if ($userAccount.AccountEnabled -eq $false)
         {
             throw (
-                "User account '{0}' (DisplayName='{1}') is disabled in Microsoft Entra ID. " +
-                "Enable the account before running the migration." -f $UserPrincipalName, $userAccount.DisplayName
+                ("User account '{0}' (DisplayName='{1}') is disabled in Microsoft Entra ID. " +
+                "Enable the account before running the migration.") -f $UserPrincipalName, $userAccount.DisplayName
             )
         } # if
 
@@ -1090,11 +1090,11 @@ begin
             if ($errMsg -match '404|ResourceNotFound|not found|does not exist|no OneDrive|accessDenied|access denied')
             {
                 throw (
-                    "OneDrive is not provisioned for user '{0}'. " +
+                    ("OneDrive is not provisioned for user '{0}'. " +
                     "The user account exists but their OneDrive has not been created. " +
                     "Provision via: Request-SPOPersonalSite -UserEmails '{0}' " +
                     "or have the user sign in at https://portal.office.com. " +
-                    "Original error: {1}" -f $UserPrincipalName, $errMsg
+                    "Original error: {1}") -f $UserPrincipalName, $errMsg
                 )
             } # if
             throw
