@@ -1,7 +1,7 @@
 # Assumptions & Constraints Audit
 
 Reviewed: 2026-05-05
-Script: `Update-UserFile.ps1` v1.2.0.17
+Script: `Update-UserFile.ps1` v1.2.1.0
 
 ---
 
@@ -40,7 +40,7 @@ Script: `Update-UserFile.ps1` v1.2.0.17
 | T2 | **Max retry window too short** — 4 attempts × exponential backoff ≈ 30 s. Graph can throttle for minutes under load. | **Medium** | Fixed in v1.2.0.7 — increased to 6 attempts, `MaxDelaySeconds = 60`. |
 | T3 | **No proactive self-throttling** — Requests fire as fast as possible, virtually guaranteeing 429s for large CSVs. | Low | Documented (future enhancement) |
 | T4 | **Max retry delay capped at 60 seconds** — Exponential backoff stops at 60 s even if `Retry-After` header says 120 s. Very long throttle windows may exhaust all 6 attempts. | Low | Documented |
-| T5 | **Transient errors detected by regex pattern matching** — Retry logic uses regex on error messages (`timeout|throttl|too many requests|429|5\d{2}|…`). Changes in Graph SDK error message formatting could break detection. | Medium | Documented |
+| T5 | **Transient errors detected by regex pattern matching** — Retry logic uses regex on error messages (`timeout|throttl|too many requests|429|5\d{2}|…`). Non-retryable errors (403 Forbidden, 404 Not Found) are not retried; retryable errors (500, timeout) trigger backoff. Changes in Graph SDK error message formatting could break detection. | Medium | Tested in v1.2.1.0 |
 
 ## Data & Idempotency
 
@@ -59,7 +59,7 @@ Script: `Update-UserFile.ps1` v1.2.0.17
 | # | Finding | Risk | Status |
 |---|---------|------|--------|
 | I1 | **Assumes OneDrive is provisioned** — `Get-MgUserDrive` fails with generic error if user hasn't been provisioned. No proactive check or useful message. | **Medium** | Fixed in v1.2.0.6 — detects provisioning errors and provides actionable message with `Request-SPOPersonalSite` and portal link. |
-| I2 | **Path normalization assumes `All Files/` prefix** — If Box export format changes, normalization silently passes raw path through, leading to Graph 404s. | Low | Documented |
+| I2 | **Path normalization assumes `All Files/` prefix** — Prefix removal is case-insensitive (`ALL FILES/` matches). Paths that resolve to empty or whitespace after prefix removal now fail with a clear error instead of a Graph 404. | Low | Tested in v1.2.1.0 |
 | I3 | **Single auth method (certificate-only)** — No client secret, managed identity, or interactive auth. Makes local testing harder. | Low | Documented (future enhancement) |
 | I4 | **PowerShell 7+ required** — `#Requires -Version 7.0`. Script uses ternary operators and improved module handling. Users on PowerShell 5.1 will fail to load. | Medium | By design |
 | I5 | **Graph API v1.0 endpoint hardcoded** — All calls use `https://graph.microsoft.com/v1.0/...`. No beta endpoint or version negotiation. | Low | By design |
@@ -89,7 +89,7 @@ Script: `Update-UserFile.ps1` v1.2.0.17
 
 | # | Finding | Risk | Status |
 |---|---------|------|--------|
-| M1 | **Box Previewer/Uploader roles silently skipped** — Roles that map to `$null` (no Graph equivalent) are skipped with `Status='Skipped'`. No API call is made. | Low | By design |
+| M1 | **Box Previewer/Uploader roles silently skipped** — Roles that map to `$null` (no Graph equivalent) are skipped with `Status='Skipped'`. No API call is made. Viewer Uploader maps to `read`; Previewer Uploader, Uploader, and unknown roles map to `$null` and are skipped. | Low | Tested in v1.2.1.0 |
 | M2 | **Invite API uses `requireSignIn = $true`** — Recipients must sign in with a Microsoft account to access shared items. Anonymous sharing is not supported. | Low | By design |
 
 ## Pipeline Behavior
