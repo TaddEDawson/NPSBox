@@ -71,9 +71,10 @@ Script: `Update-UserFile.ps1` v1.2.0.17
 
 | # | Finding | Risk | Status |
 |---|---------|------|--------|
-| U1 | **Local folder must be named by user's UPN** — e.g., `AllFilesDirectory\user@contoso.com\`. If the folder doesn't exist, upload skips silently (no error thrown). | **High** | Documented |
+| U1 | **Local folder must be named by user's UPN** — e.g., `AllFilesDirectory\user@contoso.com\`. If the folder doesn't exist, `Invoke-OneDriveUpload` throws and the error is logged. The owner's permission rows are still processed. | **Medium** | By design — `Test-Path` guard throws with a clear message. |
 | U2 | **Only simple upload for files ≤ 4 MB** — Resumable upload (for files > 4 MB) is not implemented. Files exceeding the limit throw with a clear message. | **High** | Documented (P1 guard enforces) |
-| U3 | **Folders created with PATCH (folder body)** — Folders uploaded via `PATCH` to `root:/{path}` with `{ folder: {}, conflictBehavior: 'replace' }`. File overwrite behavior is replace (not skip). | Low | By design |
+| U3 | **Folders created with PATCH (undocumented)** — Folders created via `PATCH` to `root:/{path}` with `{ folder: {}, conflictBehavior: 'replace' }`. The [documented method](https://learn.microsoft.com/graph/api/driveitem-post-children) is `POST` to the parent's `/children` collection. PATCH-with-folder-body works as an undocumented upsert but is not guaranteed by the API contract. The `replace` conflict behavior on folders may delete and recreate the folder, **potentially losing existing child files**. | **High** | Documented — consider switching to `POST` with `conflictBehavior: fail` + 409 handling. |
+| U5 | **`Assert-GraphPermissions` requires `Application.Read.All`** — The permission check queries `Get-MgServicePrincipal` which requires `Application.Read.All`. This permission is not listed as a prerequisite. Without it, the check is silently skipped (WARN logged). The script still functions; only the pre-flight permission validation is lost. | **Medium** | Documented — non-blocking (graceful fallback). |
 | U4 | **Folder processing order: depth-first by path length** — Folders sorted by `FullName.Length` so parent folders are created before children. Prevents children-before-parent failures. | Low | By design |
 
 ## Logging & Output

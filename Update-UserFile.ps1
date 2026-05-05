@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.17
+    Version: 1.2.1.0
     Date:    2026-05-05
 
 .DESCRIPTION

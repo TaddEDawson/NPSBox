@@ -1231,6 +1231,347 @@ Describe 'Update-UserFile.ps1' {
             $threwError | Should -Be $true
         }
     }
+
+    Context 'Script Execution - Extended Permission Mapping' {
+        BeforeEach {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_extperm.csv'
+            $rows = @(
+                (New-CsvRow -ItemName 'DocVU.txt' -CollaboratorPermission 'Viewer Uploader'),
+                (New-CsvRow -ItemName 'DocPU.txt' -CollaboratorPermission 'Previewer Uploader'),
+                (New-CsvRow -ItemName 'DocUp.txt' -CollaboratorPermission 'Uploader'),
+                (New-CsvRow -ItemName 'DocUnk.txt' -CollaboratorPermission 'SomethingNew')
+            )
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_extperm'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{
+                    Id     = $script:DefaultDriveId
+                    WebUrl = $script:DefaultWebUrl
+                }
+            }
+
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri, $Body)
+
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{
+                        id     = 'root-id'
+                        webUrl = $script:DefaultWebUrl
+                    }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    return [PSCustomObject]@{
+                        id   = 'item-id-12345'
+                        name = 'TestItem'
+                    }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{
+                        value = @(@{ id = 'perm-12345'; roles = @('read') })
+                    }
+                }
+            }
+        }
+
+        It 'should map Viewer Uploader permission to read role' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $vuResult = $results | Where-Object { $_.ItemName -eq 'DocVU.txt' }
+            $vuResult.GraphRole | Should -Be 'read'
+            $vuResult.CollaboratorPermission | Should -Be 'Viewer Uploader'
+            $vuResult.Status | Should -Be 'Applied'
+        }
+
+        It 'should skip Previewer Uploader permission (maps to null)' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $puResult = $results | Where-Object { $_.ItemName -eq 'DocPU.txt' }
+            $puResult.Action | Should -Be 'Skipped'
+            $puResult.Status | Should -Be 'Skipped'
+            $puResult.GraphRole | Should -BeNullOrEmpty
+        }
+
+        It 'should skip Uploader permission (maps to null)' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $upResult = $results | Where-Object { $_.ItemName -eq 'DocUp.txt' }
+            $upResult.Action | Should -Be 'Skipped'
+            $upResult.Status | Should -Be 'Skipped'
+            $upResult.GraphRole | Should -BeNullOrEmpty
+        }
+
+        It 'should skip unknown permission (maps to null)' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $unkResult = $results | Where-Object { $_.ItemName -eq 'DocUnk.txt' }
+            $unkResult.Action | Should -Be 'Skipped'
+            $unkResult.Status | Should -Be 'Skipped'
+            $unkResult.GraphRole | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Script Execution - Path Edge Cases' {
+        BeforeEach {
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_pathedge'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{
+                    Id     = $script:DefaultDriveId
+                    WebUrl = $script:DefaultWebUrl
+                }
+            }
+
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri, $Body)
+
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{
+                        id     = 'root-id'
+                        webUrl = $script:DefaultWebUrl
+                    }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    return [PSCustomObject]@{
+                        id   = 'item-id-12345'
+                        name = 'TestItem'
+                    }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{
+                        value = @(@{ id = 'perm-12345'; roles = @('write') })
+                    }
+                }
+            }
+        }
+
+        It 'should fail when path resolves to empty after All Files prefix removal' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_emptypath.csv'
+            @(New-CsvRow -Path 'All Files' -ItemName 'root.txt') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'root.txt' }
+            $result.Status | Should -Be 'Failed'
+            $result.Error | Should -Match 'empty'
+        }
+
+        It 'should fail when path is whitespace only' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_wspath.csv'
+            @(New-CsvRow -Path '   ' -ItemName 'ws.txt') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'ws.txt' }
+            $result.Status | Should -Be 'Failed'
+            $result.Error | Should -Match 'empty'
+        }
+
+        It 'should normalize case-variant All Files prefix' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_casepath.csv'
+            @(New-CsvRow -Path 'ALL FILES/Reports' -ItemName 'report.txt') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'report.txt' }
+            $result.NormalizedPath | Should -Be 'Reports'
+            $result.Status | Should -Be 'Applied'
+        }
+    }
+
+    Context 'Script Execution - Transient Error Classification' {
+        BeforeEach {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_errclass.csv'
+            @(New-CsvRow -ItemName 'DocErr.txt' -CollaboratorPermission 'Editor') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_errclass'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{
+                    Id     = $script:DefaultDriveId
+                    WebUrl = $script:DefaultWebUrl
+                }
+            }
+        }
+
+        It 'should not retry 403 Forbidden errors' {
+            $script:callCount = 0
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri, $Body)
+
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    $script:callCount++
+                    throw '[403 Forbidden] Access denied.'
+                }
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'DocErr.txt' }
+            $result.Status | Should -Be 'Failed'
+            $result.Error | Should -Match '403'
+            # Non-retryable — should be called exactly once (no retries).
+            $script:callCount | Should -Be 1
+        }
+
+        It 'should not retry 404 NotFound errors' {
+            $script:callCount = 0
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri, $Body)
+
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    $script:callCount++
+                    throw '[404 Not Found] itemNotFound'
+                }
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'DocErr.txt' }
+            $result.Status | Should -Be 'Failed'
+            $result.ExistsInOneDrive | Should -Be $false
+            $script:callCount | Should -Be 1
+        }
+
+        It 'should retry 500 Internal Server Error' {
+            $script:callCount = 0
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri, $Body)
+
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    $script:callCount++
+                    if ($script:callCount -le 1) {
+                        throw '[500 Internal Server Error] Service unavailable.'
+                    }
+                    return [PSCustomObject]@{ id = 'item-id-12345'; name = 'TestItem' }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{
+                        value = @(@{ id = 'perm-12345'; roles = @('write') })
+                    }
+                }
+            }
+
+            Mock -CommandName 'Start-Sleep' -MockWith { }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'DocErr.txt' }
+            $result.Status | Should -Be 'Applied'
+            $script:callCount | Should -Be 2
+        }
+
+        It 'should retry timeout errors' {
+            $script:callCount = 0
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri, $Body)
+
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    $script:callCount++
+                    if ($script:callCount -le 1) {
+                        throw 'The request timed out.'
+                    }
+                    return [PSCustomObject]@{ id = 'item-id-12345'; name = 'TestItem' }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{
+                        value = @(@{ id = 'perm-12345'; roles = @('write') })
+                    }
+                }
+            }
+
+            Mock -CommandName 'Start-Sleep' -MockWith { }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'DocErr.txt' }
+            $result.Status | Should -Be 'Applied'
+            $script:callCount | Should -Be 2
+        }
+    }
 }
 
 

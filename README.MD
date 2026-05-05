@@ -19,7 +19,7 @@ The project originally used `PnP.PowerShell` to resolve OneDrive items via Share
 | **Authentication** | Multiple auth modes (`Interactive`, `ManagedIdentity`, `Certificate`, etc.) added complexity. Required SPO admin URL and MySite host URL parameters. | Certificate-based app-only auth via [`Connect-MgGraph`](https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/connect-mggraph). Three parameters: `TenantId`, `ClientId`, `CertificateThumbprint`. |
 | **File upload** | Not supported — permissions only. | Supports uploading local files to OneDrive via the [simple upload API](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0) (≤ 4 MB). |
 | **Retry / throttling** | No built-in retry. PnP cmdlets surfaced raw 429 errors. | `Invoke-WithGraphRetry` with exponential backoff, `Retry-After` header parsing, and configurable max attempts. |
-| **Testability** | CSOM calls were difficult to mock in Pester. | All Graph calls go through `Invoke-MgGraphRequest`, which is straightforward to mock. Full Pester 5 test suite (57 tests). |
+| **Testability** | CSOM calls were difficult to mock in Pester. | All Graph calls go through `Invoke-MgGraphRequest`, which is straightforward to mock. Full Pester 5 test suite (68 tests). |
 
 The legacy PnP scripts (`Set-BoxToOneDriveItemPermission.ps1`, `Connect-SharePointOnlineAdmin.ps1`, `Add-SCA.ps1`, `Add-AppCertificateCredential.ps1`, `Get-UserLocalFiles.ps1`) have been removed from the active project. Archived sample data is in `holding/`.
 
@@ -116,6 +116,7 @@ Install-Module Microsoft.Graph.Applications    -Scope CurrentUser
   granted with admin consent:
   - `Files.ReadWrite.All`
   - `User.Read.All`
+  - `Application.Read.All` *(optional — enables startup permission validation via `Assert-GraphPermissions`; without it the check is skipped with a warning)*
   - [Register an application](https://learn.microsoft.com/entra/identity-platform/quickstart-register-app)
 - A certificate uploaded to the app registration — [Certificate credentials](https://learn.microsoft.com/entra/identity-platform/certificate-credentials)
 - Run `Test-AzureAppRegistration.ps1` to verify permissions before first use.
@@ -255,7 +256,7 @@ $params = @{
 
 When `-UploadFiles` is specified, the script uploads local files from `<AllFilesDirectory>\<UserToProcess>\` to the user's OneDrive root before applying permissions.
 
-- Folders are created first (parent before child, sorted by path depth) via `PATCH` with a folder body and `@microsoft.graph.conflictBehavior = replace`.
+- Folders are created first (parent before child, sorted by path depth) via `PATCH` with a folder body and `@microsoft.graph.conflictBehavior = replace`. **Note:** `PATCH` for folder creation is undocumented; the [documented method](https://learn.microsoft.com/graph/api/driveitem-post-children) is `POST` to the parent's `/children`. The `replace` behavior on existing folders may risk data loss — see [`assumptions.md`](assumptions.md) U3.
 - Files are uploaded via `PUT /drives/{driveId}/root:/{path}:/content` ([simple upload API](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0)).
 - Files larger than 4 MB are rejected with a clear error message. A [resumable upload session](https://learn.microsoft.com/graph/api/driveitem-createuploadsession?view=graph-rest-1.0) would be required for larger files (not implemented).
 - Use `-WhatIf` to preview what would be uploaded without making changes.
@@ -301,6 +302,7 @@ See [Microsoft Graph throttling guidance](https://learn.microsoft.com/graph/thro
 - **No email notifications:** All permission grants use `sendInvitation = false`.
 - **No idempotency check:** Re-running re-grants every permission without checking existing roles. Granting a different role to an existing collaborator may create a second permission entry.
 - **No Graph batching:** Each permission grant is a separate HTTP request. Graph supports batching up to 20 requests (future enhancement).
+- **Folder creation uses undocumented PATCH upsert:** The [documented method](https://learn.microsoft.com/graph/api/driveitem-post-children) is `POST` to the parent's `/children` collection. The current PATCH approach works but is not guaranteed by the API contract and uses `conflictBehavior = replace`, which may risk data loss on existing folders.
 - **PnP.PowerShell conflict:** Do not import `PnP.PowerShell` in the same session. It loads `Microsoft.Graph.Core` 1.x, which is incompatible with Graph SDK v2. Start a fresh `pwsh` session.
 - **`Connect-Graph` alias collision:** The `Microsoft.Graph.Authentication` module exports `Connect-Graph` as an alias. Do not name custom functions `Connect-Graph` — use `Connect-GraphCertAuth` or a similar unique name to avoid silent delegation fallback.
 - Always run with `-WhatIf` first in a new tenant or against new datasets.
@@ -350,5 +352,6 @@ See [`assumptions.md`](assumptions.md) for a comprehensive audit of security, pe
 
 | Version | Date | Summary |
 |---|---|---|
-| **1.2.0.17** | 2026-05-05 | **Critical fix:** Renamed `Connect-Graph` → `Connect-GraphCertAuth` to avoid alias collision with `Microsoft.Graph.Authentication` module. The module exports `Connect-Graph` as an alias for `Connect-MgGraph`; PowerShell resolves aliases before functions, causing the script's auth function to be silently bypassed. This resulted in delegated auth (wrong ClientId, insufficient permissions) instead of certificate-based app-only auth. Uploads and permission grants failed with `Authorization_RequestDenied`. All 57 Pester tests updated and passing. |
+| **1.2.1.0** | 2026-05-05 | Minor version bump. Added 11 new Pester tests covering: Viewer Uploader/Previewer Uploader/Uploader/unknown permission mapping, path edge cases (empty after prefix removal, whitespace-only, case-variant `ALL FILES`), and transient error classification (403 not retried, 404 not retried, 500 retried, timeout retried). Total: 68 tests (57 Update-UserFile + 11 App Registration). |
+| 1.2.0.17 | 2026-05-05 | **Critical fix:** Renamed `Connect-Graph` → `Connect-GraphCertAuth` to avoid alias collision with `Microsoft.Graph.Authentication` module. The module exports `Connect-Graph` as an alias for `Connect-MgGraph`; PowerShell resolves aliases before functions, causing the script's auth function to be silently bypassed. This resulted in delegated auth (wrong ClientId, insufficient permissions) instead of certificate-based app-only auth. Uploads and permission grants failed with `Authorization_RequestDenied`. All 57 Pester tests updated and passing. |
 | 1.2.0.16 | 2026-04-29 | Previous release |
