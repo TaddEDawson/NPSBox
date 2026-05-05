@@ -25,7 +25,7 @@ Describe 'Test-AzureAppRegistration.ps1' {
 
         # Stubs for script-internal functions.
         function Assert-RequiredModules { }
-        function Connect-Graph { }
+        function Connect-GraphCertAuth { }
 
         # Module cmdlet stubs — only create if not already available.
         foreach ($cmdletName in @(

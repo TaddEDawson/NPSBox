@@ -23,7 +23,7 @@ New-CsvRow -ItemName 'Doc1.txt' -CollaboratorPermission 'Editor'
 
 Mock ALL external dependencies — no real Graph or file-system calls in tests:
 
-- `Assert-RequiredModules`, `Assert-GraphAssemblyCompatibility`, `Connect-Graph` — mock as no-op.
+- `Assert-RequiredModules`, `Assert-GraphAssemblyCompatibility`, `Connect-GraphCertAuth` — mock as no-op.
 - `Connect-MgGraph`, `Disconnect-MgGraph` — mock as no-op.
 - `Get-MgUserDrive` — return `[PSCustomObject]@{ Id = $driveId; WebUrl = $webUrl }`.
 - `Invoke-MgGraphRequest` — branch on `$Uri` and `$Method` to return appropriate mock data.

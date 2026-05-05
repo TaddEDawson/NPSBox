@@ -31,7 +31,7 @@ Describe 'Update-UserFile.ps1' {
         # them resolvable before Mock is called.  Using explicit function
         # declarations at the current scope ensures Pester can find them.
         function Assert-RequiredModules { }
-        function Connect-Graph { }
+        function Connect-GraphCertAuth { }
         function Assert-GraphAssemblyCompatibility { }
         function Assert-GraphPermissions { }
         function Get-ValidatedUserDrive { }
@@ -1145,16 +1145,16 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
-            # NOTE: Connect-Graph is NOT mocked here — we let it run so
+            # NOTE: Connect-GraphCertAuth is NOT mocked here — we let it run so
             # the post-connection validation logic is exercised.
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
         }
 
         It 'should throw when session falls back to delegated auth' {
-            # Mock Connect-Graph to simulate post-connection validation
+            # Mock Connect-GraphCertAuth to simulate post-connection validation
             # by calling Get-MgContext and checking the auth type.
-            Mock -CommandName 'Connect-Graph' -MockWith {
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith {
                 $ctx = Get-MgContext
                 if ($null -ne $ctx -and $ctx.AuthType -ne 'AppOnly')
                 {
@@ -1188,7 +1188,7 @@ Describe 'Update-UserFile.ps1' {
         }
 
         It 'should throw when session uses wrong ClientId' {
-            Mock -CommandName 'Connect-Graph' -MockWith {
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith {
                 $ctx = Get-MgContext
                 if ($null -ne $ctx -and $ctx.AuthType -eq 'AppOnly' -and $ctx.ClientId -ne '912696b9-1374-4110-893d-545fc17c3371')
                 {

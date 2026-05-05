@@ -8,8 +8,8 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.0.16
-    Date:    2026-04-29
+    Version: 1.2.0.17
+    Date:    2026-05-05
 
 .DESCRIPTION
     This script migrates Box collaboration data into OneDrive for Business.
@@ -637,7 +637,7 @@ begin
         } # while
     } # function Invoke-WithGraphRetry
 
-    # ── Connect-Graph ────────────────────────────────────────────────────────────
+    # ── Connect-GraphCertAuth ─────────────────────────────────────────────────────
     # Authenticates to Microsoft Graph using certificate-based app-only auth.
     #
     # Certificate mode uses a certificate for "app-only" auth — no user sign-in
@@ -648,7 +648,7 @@ begin
     #   https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/connect-mggraph
     # Auth overview:
     #   https://learn.microsoft.com/powershell/microsoftgraph/authentication-commands
-    function Connect-Graph
+    function Connect-GraphCertAuth
     {
         [CmdletBinding()]
         param()
@@ -728,7 +728,7 @@ begin
         {
             $WhatIfPreference = $previousWhatIfPreference
         } # finally
-    } # function Connect-Graph
+    } # function Connect-GraphCertAuth
 
     # ── Invoke-OneDriveUpload ─────────────────────────────────────────────────────
     # Uploads local files and folders to a user's OneDrive.
@@ -1167,7 +1167,7 @@ begin
 
     Assert-GraphAssemblyCompatibility   # Check for PnP.PowerShell conflicts
     Assert-RequiredModules              # Import Graph SDK modules
-    Connect-Graph                       # Authenticate to Microsoft Graph
+    Connect-GraphCertAuth               # Authenticate to Microsoft Graph
     Assert-GraphPermissions             # Verify required app permissions
 
     # Cache the CSV data once in the begin block so piping multiple UPNs does
