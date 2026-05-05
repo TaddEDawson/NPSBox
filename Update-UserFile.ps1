@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.1.3
+    Version: 1.2.2.0
     Date:    2026-05-05
 
 .DESCRIPTION
@@ -181,16 +181,19 @@ param
     [string] $UserToProcess
     ,
     # Your tenant ID (GUID).  Find it: Azure Portal > Entra ID > Overview.
-    [Parameter()]
-    [string] $TenantId = "92075952-90f3-4613-833b-d2e19ec649e4"
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string] $TenantId
     ,
     # The app registration's client ID (GUID).
-    [Parameter()]
-    [string] $ClientId = "912696b9-1374-4110-893d-545fc17c3371"
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string] $ClientId
     ,
     # Certificate thumbprint for app-only auth.
-    [Parameter()]
-    [string] $CertificateThumbprint = "9D0F9B62AC3B002E56C2A304E88AD429813E55E2"
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string] $CertificateThumbprint
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
     [Parameter()]
@@ -397,6 +400,56 @@ begin
         $lowerDomains = $Domains | ForEach-Object { $_.ToLowerInvariant() }
         return ($emailDomain -in $lowerDomains)
     } # function Test-CollaboratorDomain
+
+    # ── Test-EmailFormat ────────────────────────────────────────────────────────
+    # Validates that a string is a plausible email address.
+    # Uses a basic regex: local-part @ domain with at least one dot.
+    # Not a full RFC 5322 implementation, but catches obvious non-email values
+    # (e.g. "notanemail", "@domain", "user@").
+    # Returns $true if the format is valid, $false otherwise.
+    function Test-EmailFormat
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $Email
+        )
+
+        return ($Email -match '^[^@\s]+@[^@\s]+\.[^@\s]+$')
+    } # function Test-EmailFormat
+
+    # ── Assert-CsvColumns ─────────────────────────────────────────────────────────
+    # Validates that the CSV contains all required column headers.
+    # Throws with a clear message listing any missing columns.
+    # This prevents null-reference errors deep in the processing loop.
+    function Assert-CsvColumns
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [object[]] $CsvRows
+        )
+
+        $requiredColumns = @('Owner Login', 'Path', 'Item Name', 'Collaborator Login', 'Collaborator Permission')
+        $firstRow = $CsvRows | Select-Object -First 1
+        if ($null -eq $firstRow)
+        {
+            throw 'CSV file is empty — no rows to process.'
+        } # if
+
+        $actualColumns = @($firstRow.PSObject.Properties.Name)
+        $missingColumns = @($requiredColumns | Where-Object { $_ -notin $actualColumns })
+
+        if ($missingColumns.Count -gt 0)
+        {
+            throw ("CSV is missing required column(s): {0}. Expected columns: {1}. Found columns: {2}" -f
+                ($missingColumns -join ', '),
+                ($requiredColumns -join ', '),
+                ($actualColumns -join ', '))
+        } # if
+    } # function Assert-CsvColumns
 
     # ── ConvertTo-OneDriveRelativePath ────────────────────────────────────────────
     # Cleans up the Box export path so it can be used with the Graph API.
@@ -633,8 +686,11 @@ begin
                 $retryAfter = Get-RetryAfterSeconds -ErrorRecord $_
                 if ($null -ne $retryAfter -and $retryAfter -gt 0)
                 {
-                    $delaySeconds = [Math]::Min($retryAfter, $MaxDelaySeconds)
-                    Write-LogLine -Level 'WARN' -Message ("Using Retry-After value: {0}s (capped at {1}s)." -f $retryAfter, $MaxDelaySeconds)
+                    # Honor the Retry-After value from the server, even if it
+                    # exceeds MaxDelaySeconds.  Capping caused premature retry
+                    # exhaustion under heavy throttling (finding T4).
+                    $delaySeconds = $retryAfter
+                    Write-LogLine -Level 'WARN' -Message ("Using Retry-After value: {0}s." -f $retryAfter)
                 } # if
 
                 Start-Sleep -Seconds $delaySeconds
@@ -785,7 +841,20 @@ begin
         {
             $relativePath = $folder.FullName.Substring($baseLength) -replace '\\', '/'
             $encodedRelPath = ConvertTo-GraphEncodedPath -RelativePath $relativePath
-            $folderUri = "https://graph.microsoft.com/v1.0/drives/$DriveId/root:/$encodedRelPath"
+            # Build the parent path and folder name for the POST /children API.
+            # https://learn.microsoft.com/graph/api/driveitem-post-children?view=graph-rest-1.0
+            $segments = $relativePath -split '/'
+            $folderName = $segments[-1]
+            if ($segments.Count -gt 1)
+            {
+                $parentRelPath = ($segments[0..($segments.Count - 2)]) -join '/'
+                $encodedParentPath = ConvertTo-GraphEncodedPath -RelativePath $parentRelPath
+                $childrenUri = "https://graph.microsoft.com/v1.0/drives/$DriveId/root:/${encodedParentPath}:/children"
+            } # if
+            else
+            {
+                $childrenUri = "https://graph.microsoft.com/v1.0/drives/$DriveId/root/children"
+            } # else
 
             $result = [pscustomobject]@{
                 OwnerLogin   = $OwnerUpn
@@ -801,10 +870,29 @@ begin
             {
                 if ($PSCmdlet.ShouldProcess("OneDrive:/$relativePath", "Create folder"))
                 {
-                    $body = @{ folder = @{}; '@microsoft.graph.conflictBehavior' = 'replace' } | ConvertTo-Json -Depth 4
-                    Invoke-WithGraphRetry -OperationName ("Create folder '{0}'" -f $relativePath) -Operation {
-                        Invoke-MgGraphRequest -Method PATCH -Uri $folderUri -Body $body -ContentType 'application/json' -ErrorAction Stop | Out-Null
-                    } # inline:Invoke-WithGraphRetry -OperationName ("C
+                    $body = @{
+                        name                              = $folderName
+                        folder                            = @{}
+                        '@microsoft.graph.conflictBehavior' = 'fail'
+                    } | ConvertTo-Json -Depth 4
+                    try
+                    {
+                        Invoke-WithGraphRetry -OperationName ("Create folder '{0}'" -f $relativePath) -Operation {
+                            Invoke-MgGraphRequest -Method POST -Uri $childrenUri -Body $body -ContentType 'application/json' -ErrorAction Stop | Out-Null
+                        } # inline:Invoke-WithGraphRetry
+                    } # try
+                    catch
+                    {
+                        # 409 Conflict means the folder already exists — safe to continue.
+                        if ($_.Exception.Message -match '409|nameAlreadyExists|conflict')
+                        {
+                            Write-LogLine -Message ("Folder already exists (409): OneDrive:/{0}" -f $relativePath)
+                        } # if
+                        else
+                        {
+                            throw
+                        } # else
+                    } # catch — 409 handling
                     $result.Status = 'Applied'
                     Write-LogLine -Message ("Created folder: OneDrive:/{0}" -f $relativePath)
                 } # if
@@ -1256,6 +1344,9 @@ begin
     if (-not $script:TestModeActive -and $InputFile.Exists)
     {
         $script:CachedCsvRows = Import-Csv -LiteralPath $InputFile.FullName
+
+        # Validate that all required columns exist in the CSV before processing.
+        Assert-CsvColumns -CsvRows $script:CachedCsvRows
     } # if
 } # begin
 
@@ -1412,6 +1503,16 @@ process
             $collab   = [string] $row.'Collaborator Login'
             $boxPerm  = [string] $row.'Collaborator Permission'
 
+            # ── Unified empty-cell validation (D6) ───────────────────────────
+            # Check all required fields at once before processing.  This gives
+            # a consistent error for any empty/whitespace cell rather than
+            # failing at different points with different messages.
+            $emptyFields = @()
+            if ([string]::IsNullOrWhiteSpace($itemPath))  { $emptyFields += 'Path' }
+            if ([string]::IsNullOrWhiteSpace($itemName))  { $emptyFields += 'Item Name' }
+            if ([string]::IsNullOrWhiteSpace($collab))    { $emptyFields += 'Collaborator Login' }
+            if ([string]::IsNullOrWhiteSpace($boxPerm))   { $emptyFields += 'Collaborator Permission' }
+
             # Map the Box permission to a Graph role (read/write/null).
             $graphRole = ConvertTo-GraphRole -BoxPermission $boxPerm
 
@@ -1439,9 +1540,20 @@ process
             } # inline:$result = [pscustomobject]@{
             try
             {
-                if ([string]::IsNullOrWhiteSpace($collab))
+                if ($emptyFields.Count -gt 0)
                 {
-                    throw "Collaborator Login is empty."
+                    throw ("Required CSV field(s) empty: {0}." -f ($emptyFields -join ', '))
+                } # if
+
+                # Validate basic email format before domain check (S6).
+                if (-not (Test-EmailFormat -Email $collab))
+                {
+                    $result.Action = 'Skipped'
+                    $result.Status = 'Skipped'
+                    $result.Error  = "Collaborator Login '{0}' is not a valid email format." -f $collab
+                    Write-LogLine -Level 'WARN' -Message $result.Error
+                    $result
+                    continue
                 } # if
 
                 # Validate that the collaborator's domain is permitted.

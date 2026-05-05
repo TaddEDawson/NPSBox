@@ -25,18 +25,19 @@ Describe 'Update-UserFile.ps1' {
         $script:DefaultDriveId = 'b!-kIQeRjLDEyVXvh98xyWkBx6vWyJBJhFr5H_U3K6v7bkHqmOKs-hRpYN8L-rk6HJ'
         $script:DefaultWebUrl = 'https://contoso-my.sharepoint.com/personal/user_contoso_onmicrosoft_com'
         $script:DefaultThumbprint = 'AABBCCDDEE1122334455AABBCCDDEE1122334455'
+        $script:DefaultTenantId = '00000000-0000-0000-0000-000000000001'
+        $script:DefaultClientId = '00000000-0000-0000-0000-000000000002'
 
         # Create stubs for script-internal functions that will be mocked.
-        # These do not exist until the script is dot-sourced, but Pester needs
-        # them resolvable before Mock is called.  Using explicit function
-        # declarations at the current scope ensures Pester can find them.
         function Assert-RequiredModules { }
         function Connect-GraphCertAuth { }
         function Assert-GraphAssemblyCompatibility { }
         function Assert-GraphPermissions { }
+        function Assert-CsvColumns { }
         function Get-ValidatedUserDrive { }
         function Invoke-OneDriveUpload { }
         function Test-CollaboratorDomain { return $true }
+        function Test-EmailFormat { return $true }
         function Get-RetryAfterSeconds { return $null }
 
         # Module cmdlets — only stub if not already available from the installed module.
@@ -99,6 +100,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -139,7 +141,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should map Editor permission to write role' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $editorResult = $results | Where-Object { $_.ItemName -eq 'Doc1.txt' }
@@ -151,7 +153,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should map Viewer permission to read role' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $viewerResult = $results | Where-Object { $_.ItemName -eq 'Doc2.txt' }
@@ -163,7 +165,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should map Co-owner permission to write role' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $coOwnerResult = $results | Where-Object { $_.ItemName -eq 'Doc4.txt' }
@@ -175,7 +177,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should skip Previewer permission (maps to null)' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $previewerResult = $results | Where-Object { $_.ItemName -eq 'Doc3.txt' }
@@ -187,12 +189,12 @@ Describe 'Update-UserFile.ps1' {
         It 'should fail when collaborator login is empty' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $failResult = $results | Where-Object { $_.ItemName -eq 'Doc5.txt' }
             $failResult.Status | Should -Be 'Failed'
-            $failResult.Error | Should -Match 'Collaborator Login'
+            $failResult.Error | Should -Match 'Required CSV field\(s\) empty'
         }
     }
 
@@ -213,6 +215,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -237,7 +240,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should normalize All Files prefix in paths' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'File.txt' }
@@ -247,7 +250,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should handle paths with spaces' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'Report.pdf' }
@@ -258,7 +261,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should handle paths with parentheses' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'Thesis.docx' }
@@ -269,7 +272,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should convert backslashes to forward slashes' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'Data.xlsx' }
@@ -293,6 +296,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -317,7 +321,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should output custom objects with all required properties' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Select-Object -First 1
@@ -342,7 +346,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should set IsValidAccount and OneDriveProvisioned to true on success' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Select-Object -First 1
@@ -353,7 +357,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should support -WhatIf parameter' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -WhatIf -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -WhatIf -Verbose:$false
             } 6>&1
 
             $results | Should -Not -BeNullOrEmpty
@@ -363,7 +367,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should create log file in specified folder' {
             $null = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $logFiles = Get-ChildItem -Path $script:LogFolder -Filter '*.log'
@@ -375,7 +379,7 @@ Describe 'Update-UserFile.ps1' {
             $newLogFolder = Join-Path -Path $TestDrive -ChildPath 'new_logs_output'
             $null = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $newLogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $newLogFolder -Verbose:$false
             } 6>&1
 
             $newLogFolder | Should -Exist
@@ -391,6 +395,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -399,7 +404,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should throw when InputFile does not exist' {
             { & {
                 . $script:ScriptUnderTest -InputFile 'nonexistent.csv' -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } } | Should -Throw
         }
 
@@ -416,7 +421,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results | Should -Not -BeNullOrEmpty
@@ -447,7 +452,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].ExistsInOneDrive | Should -Be $false
@@ -467,7 +472,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].Status | Should -Be 'Failed'
@@ -487,7 +492,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].Status | Should -Be 'Failed'
@@ -506,7 +511,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].Status | Should -Be 'Failed'
@@ -528,7 +533,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].Status | Should -Be 'Failed'
@@ -548,7 +553,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].Status | Should -Be 'Failed'
@@ -574,6 +579,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -600,7 +606,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should process multiple rows and apply permissions' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'adile@contoso.com' `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results.Count | Should -Be 2
@@ -613,7 +619,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should apply correct roles for different permission levels' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'adile@contoso.com' `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results[0].GraphRole | Should -Be 'write'
@@ -623,7 +629,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should disconnect from Graph after processing' {
             $null = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'adile@contoso.com' `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             Assert-MockCalled -CommandName 'Disconnect-MgGraph' -Scope It
@@ -645,6 +651,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -669,7 +676,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should process all unique owners when UserToProcess is not specified' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results.Count | Should -Be 2
@@ -680,7 +687,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should apply correct roles per owner when processing all users' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $owner1Result = $results | Where-Object { $_.OwnerLogin -eq 'owner1@contoso.com' }
@@ -706,7 +713,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results.Count | Should -Be 2
@@ -722,7 +729,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should filter to single owner when UserToProcess is specified' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess 'owner2@contoso.com' `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $results.Count | Should -Be 1
@@ -754,6 +761,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -778,7 +786,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should upload files and create folders' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -Verbose:$false
             } 6>&1
 
@@ -798,7 +806,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should list files that would be uploaded with -WhatIf' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -WhatIf -Verbose:$false
             } 6>&1
 
@@ -810,7 +818,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should output upload result objects with expected properties' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -Verbose:$false
             } 6>&1
 
@@ -831,7 +839,7 @@ Describe 'Update-UserFile.ps1' {
 
             { & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $emptyRoot -UploadFiles -Verbose:$false
             } } | Should -Throw '*not found*'
         }
@@ -839,7 +847,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should not upload when UploadFiles is not specified' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $script:LocalFilesRoot -Verbose:$false
             } 6>&1
 
@@ -859,7 +867,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $largeFolderRoot -UploadFiles -Verbose:$false
             } 6>&1
 
@@ -886,6 +894,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -910,7 +919,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should skip collaborators with domains not in AllowedDomains' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllowedDomains @('contoso.onmicrosoft.com', 'contoso.com') -Verbose:$false
             } 6>&1
 
@@ -922,7 +931,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should allow collaborators with domains in AllowedDomains' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllowedDomains @('contoso.onmicrosoft.com', 'contoso.com') -Verbose:$false
             } 6>&1
 
@@ -936,7 +945,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should allow all domains when AllowedDomains is not specified' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $external = $results | Where-Object { $_.ItemName -eq 'External.txt' }
@@ -950,7 +959,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $singleRowCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllowedDomains @('contoso.com') -Verbose:$false
             } 6>&1
 
@@ -972,6 +981,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -1009,7 +1019,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'RetryDoc.txt' }
@@ -1035,7 +1045,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'RetryDoc.txt' }
@@ -1063,7 +1073,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'RetryDoc.txt' }
@@ -1083,6 +1093,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -1115,7 +1126,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             # After deduplication, only 1 result should be produced
@@ -1133,7 +1144,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $permResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'ItemName' -and $_.ItemName -eq 'Doc.txt' }
@@ -1155,6 +1166,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             # NOTE: Connect-GraphCertAuth is NOT mocked here — we let it run so
             # the post-connection validation logic is exercised.
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
@@ -1186,7 +1198,7 @@ Describe 'Update-UserFile.ps1' {
             {
                 $null = & {
                     . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                        -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
                 } 6>&1
             }
             catch
@@ -1220,7 +1232,7 @@ Describe 'Update-UserFile.ps1' {
             {
                 $null = & {
                     . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                        -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
                 } 6>&1
             }
             catch
@@ -1249,6 +1261,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -1289,7 +1302,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should map Viewer Uploader permission to read role' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $vuResult = $results | Where-Object { $_.ItemName -eq 'DocVU.txt' }
@@ -1301,7 +1314,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should skip Previewer Uploader permission (maps to null)' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $puResult = $results | Where-Object { $_.ItemName -eq 'DocPU.txt' }
@@ -1313,7 +1326,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should skip Uploader permission (maps to null)' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $upResult = $results | Where-Object { $_.ItemName -eq 'DocUp.txt' }
@@ -1325,7 +1338,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should skip unknown permission (maps to null)' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $unkResult = $results | Where-Object { $_.ItemName -eq 'DocUnk.txt' }
@@ -1343,6 +1356,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -1387,7 +1401,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'root.txt' }
@@ -1402,7 +1416,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'ws.txt' }
@@ -1417,7 +1431,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'report.txt' }
@@ -1438,6 +1452,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -1469,7 +1484,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'DocErr.txt' }
@@ -1495,7 +1510,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'DocErr.txt' }
@@ -1530,7 +1545,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'DocErr.txt' }
@@ -1564,7 +1579,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $result = $results | Where-Object { $_.ItemName -eq 'DocErr.txt' }
@@ -1581,6 +1596,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Assert-RequiredModules' -MockWith { }
             Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
             Mock -CommandName 'Assert-GraphPermissions' -MockWith { return 'Verified' }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
             Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
             Mock -CommandName 'Connect-MgGraph' -MockWith { }
             Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
@@ -1589,7 +1605,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should emit per-step results with Passed status when all steps succeed' {
             $results = & {
                 . $script:ScriptUnderTest -Test `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $stepResults = $results | Where-Object { $_.Test -eq $true -and $_.Step -ne 'Overall' }
@@ -1604,7 +1620,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should emit Overall Passed when all steps pass' {
             $results = & {
                 . $script:ScriptUnderTest -Test `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $overall = $results | Where-Object { $_.Step -eq 'Overall' }
@@ -1617,7 +1633,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -Test `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $permStep = $results | Where-Object { $_.Step -eq 'Permission validation' }
@@ -1630,7 +1646,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -Test `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $overall = $results | Where-Object { $_.Step -eq 'Overall' }
@@ -1640,7 +1656,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should call Assert-RequiredModules when -Test is specified' {
             & {
                 . $script:ScriptUnderTest -Test `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1 | Out-Null
 
             Should -Invoke -CommandName 'Assert-RequiredModules' -Times 1 -Exactly
@@ -1649,7 +1665,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should call Assert-GraphAssemblyCompatibility when -Test is specified' {
             & {
                 . $script:ScriptUnderTest -Test `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1 | Out-Null
 
             Should -Invoke -CommandName 'Assert-GraphAssemblyCompatibility' -Times 1 -Exactly
@@ -1658,7 +1674,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should call Connect-GraphCertAuth when -Test is specified' {
             & {
                 . $script:ScriptUnderTest -Test `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1 | Out-Null
 
             Should -Invoke -CommandName 'Connect-GraphCertAuth' -Times 1 -Exactly
@@ -1667,7 +1683,7 @@ Describe 'Update-UserFile.ps1' {
         It 'should call Assert-GraphPermissions when -Test is specified' {
             & {
                 . $script:ScriptUnderTest -Test `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1 | Out-Null
 
             Should -Invoke -CommandName 'Assert-GraphPermissions' -Times 1 -Exactly
@@ -1688,7 +1704,7 @@ Describe 'Update-UserFile.ps1' {
 
             $results = & {
                 . $script:ScriptUnderTest -Test -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
-                    -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
             $csvResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'ItemName' }
@@ -1709,7 +1725,7 @@ Describe 'Update-UserFile.ps1' {
             {
                 & {
                     . $script:ScriptUnderTest -Test `
-                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                        -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
                 } 6>&1 | Out-Null
             }
             catch
@@ -1731,7 +1747,7 @@ Describe 'Update-UserFile.ps1' {
             {
                 & {
                     . $script:ScriptUnderTest -Test `
-                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                        -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
                 } 6>&1 | Out-Null
             }
             catch
@@ -1753,7 +1769,7 @@ Describe 'Update-UserFile.ps1' {
             {
                 & {
                     . $script:ScriptUnderTest -Test `
-                        -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                        -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
                 } 6>&1 | Out-Null
             }
             catch
@@ -1763,6 +1779,261 @@ Describe 'Update-UserFile.ps1' {
             }
 
             $threwError | Should -Be $true
+        }
+    }
+
+    Context 'D5 - CSV Column Validation' {
+        BeforeEach {
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_d5'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { return 'Verified' }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+        }
+
+        It 'should throw when CSV is missing required columns' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_badcols.csv'
+            @([PSCustomObject]@{ 'Wrong Column' = 'value'; 'Another' = 'value2' }) |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $threwError = $false
+            try
+            {
+                & {
+                    . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                        -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+                } 6>&1 | Out-Null
+            }
+            catch
+            {
+                $threwError = $true
+                $_.Exception.Message | Should -Match 'missing required column'
+            }
+
+            $threwError | Should -Be $true
+        }
+
+        It 'should pass when CSV has all required columns' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_goodcols.csv'
+            @(New-CsvRow) | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/root\?') { return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl } }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') { return [PSCustomObject]@{ id = 'item-id'; name = 'TestItem' } }
+                elseif ($Uri -match '/invite') { return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) } }
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results | Where-Object { $_.Status -eq 'Applied' } | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'D6 - Unified Empty-Cell Handling' {
+        BeforeEach {
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_d6'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { return 'Verified' }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/root\?') { return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl } }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') { return [PSCustomObject]@{ id = 'item-id'; name = 'TestItem' } }
+                elseif ($Uri -match '/invite') { return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) } }
+            }
+        }
+
+        It 'should fail with unified message when Path is empty' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_emptypath_d6.csv'
+            @(New-CsvRow -Path '   ' -ItemName 'Doc.txt') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'Doc.txt' }
+            $result.Status | Should -Be 'Failed'
+            $result.Error | Should -Match 'Required CSV field\(s\) empty.*Path'
+        }
+
+        It 'should fail with unified message when Item Name is empty' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_emptyname_d6.csv'
+            @(New-CsvRow -ItemName '  ') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Status' } | Select-Object -First 1
+            $result.Status | Should -Be 'Failed'
+            $result.Error | Should -Match 'Required CSV field\(s\) empty.*Item Name'
+        }
+
+        It 'should fail with unified message listing multiple empty fields' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_multiempty_d6.csv'
+            @(New-CsvRow -Path '' -ItemName '' -CollaboratorLogin '' -CollaboratorPermission '') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Status' } | Select-Object -First 1
+            $result.Status | Should -Be 'Failed'
+            $result.Error | Should -Match 'Path'
+            $result.Error | Should -Match 'Item Name'
+            $result.Error | Should -Match 'Collaborator Login'
+            $result.Error | Should -Match 'Collaborator Permission'
+        }
+    }
+
+    Context 'S6 - Email Format Validation' {
+        BeforeEach {
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_s6'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { return 'Verified' }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/root\?') { return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl } }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') { return [PSCustomObject]@{ id = 'item-id'; name = 'TestItem' } }
+                elseif ($Uri -match '/invite') { return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) } }
+            }
+        }
+
+        It 'should skip rows with invalid email format (no domain dot)' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_bademail.csv'
+            @(New-CsvRow -ItemName 'DocBad.txt' -CollaboratorLogin 'notanemail') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'DocBad.txt' }
+            $result.Status | Should -Be 'Skipped'
+            $result.Error | Should -Match 'not a valid email'
+        }
+
+        It 'should skip rows where collaborator has no @ symbol' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_noat.csv'
+            @(New-CsvRow -ItemName 'DocNoAt.txt' -CollaboratorLogin 'justastring') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'DocNoAt.txt' }
+            $result.Status | Should -Be 'Skipped'
+            $result.Error | Should -Match 'not a valid email'
+        }
+
+        It 'should accept valid email addresses' {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'test_goodemail.csv'
+            @(New-CsvRow -ItemName 'DocGood.txt' -CollaboratorLogin 'user@contoso.com') |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $result = $results | Where-Object { $_.ItemName -eq 'DocGood.txt' }
+            $result.Status | Should -Be 'Applied'
+        }
+    }
+
+    Context 'S3 - Mandatory Parameters (no hardcoded defaults)' {
+        BeforeEach {
+            $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_s3'
+            New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+        }
+
+        It 'should have TenantId as a mandatory parameter' {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $script:ScriptUnderTest, [ref]$null, [ref]$null)
+            $tenantParam = $ast.ParamBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'TenantId'
+            }
+            $mandatory = $tenantParam.Attributes | Where-Object {
+                $_.TypeName.Name -eq 'Parameter' -and
+                ($_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' -and $_.Argument.SafeGetValue() -eq $true })
+            }
+            $mandatory | Should -Not -BeNullOrEmpty
+        }
+
+        It 'should have ClientId as a mandatory parameter' {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $script:ScriptUnderTest, [ref]$null, [ref]$null)
+            $clientParam = $ast.ParamBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'ClientId'
+            }
+            $mandatory = $clientParam.Attributes | Where-Object {
+                $_.TypeName.Name -eq 'Parameter' -and
+                ($_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' -and $_.Argument.SafeGetValue() -eq $true })
+            }
+            $mandatory | Should -Not -BeNullOrEmpty
+        }
+
+        It 'should have CertificateThumbprint as a mandatory parameter' {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $script:ScriptUnderTest, [ref]$null, [ref]$null)
+            $certParam = $ast.ParamBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'CertificateThumbprint'
+            }
+            $mandatory = $certParam.Attributes | Where-Object {
+                $_.TypeName.Name -eq 'Parameter' -and
+                ($_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' -and $_.Argument.SafeGetValue() -eq $true })
+            }
+            $mandatory | Should -Not -BeNullOrEmpty
         }
     }
 }
