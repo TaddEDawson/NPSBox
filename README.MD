@@ -19,9 +19,9 @@ The project originally used `PnP.PowerShell` to resolve OneDrive items via Share
 | **Authentication** | Multiple auth modes (`Interactive`, `ManagedIdentity`, `Certificate`, etc.) added complexity. Required SPO admin URL and MySite host URL parameters. | Certificate-based app-only auth via [`Connect-MgGraph`](https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/connect-mggraph). Three parameters: `TenantId`, `ClientId`, `CertificateThumbprint`. |
 | **File upload** | Not supported — permissions only. | Supports uploading local files to OneDrive via the [simple upload API](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0) (≤ 4 MB). |
 | **Retry / throttling** | No built-in retry. PnP cmdlets surfaced raw 429 errors. | `Invoke-WithGraphRetry` with exponential backoff, `Retry-After` header parsing, and configurable max attempts. |
-| **Testability** | CSOM calls were difficult to mock in Pester. | All Graph calls go through `Invoke-MgGraphRequest`, which is straightforward to mock. Full Pester 5 test suite (68 tests). |
+| **Testability** | CSOM calls were difficult to mock in Pester. | All Graph calls go through `Invoke-MgGraphRequest`, which is straightforward to mock. Full Pester 5 test suite (87 tests for `Update-UserFile.ps1`). |
 
-The legacy PnP scripts (`Set-BoxToOneDriveItemPermission.ps1`, `Connect-SharePointOnlineAdmin.ps1`, `Add-SCA.ps1`, `Add-AppCertificateCredential.ps1`, `Get-UserLocalFiles.ps1`) have been removed from the active project. Archived sample data is in `holding/`.
+The legacy PnP scripts (`Set-BoxToOneDriveItemPermission.ps1`, `Connect-SharePointOnlineAdmin.ps1`, `Add-SCA.ps1`, `Add-AppCertificateCredential.ps1`, `Get-UserLocalFiles.ps1`) have been removed from the active project. Archived sample data and the standalone `Test-AzureAppRegistration.ps1` validator (now folded into `-Test` mode of the main script) are in `holding/`.
 
 ---
 
@@ -33,14 +33,16 @@ The legacy PnP scripts (`Set-BoxToOneDriveItemPermission.ps1`, `Connect-SharePoi
   - [What it does](#what-it-does)
   - [Prerequisites](#prerequisites)
   - [Parameters](#parameters)
+  - [Parameter sets and operating modes](#parameter-sets-and-operating-modes)
   - [Box role mapping](#box-role-mapping)
   - [Authentication](#authentication)
   - [Usage examples](#usage-examples)
   - [File upload](#file-upload)
+  - [Output objects](#output-objects)
   - [Logging](#logging)
   - [Retry and throttle handling](#retry-and-throttle-handling)
   - [Known limitations](#known-limitations)
-- [Test-AzureAppRegistration.ps1](#test-azureappregistrationps1)
+- [Set-NPSBoxEnv.ps1](#set-npsboxenvps1)
 - [GitHub Copilot customization (.github/)](#github-copilot-customization-github)
 - [Disclaimer](#disclaimer)
 - [Assumptions & constraints](#assumptions--constraints)
@@ -51,15 +53,16 @@ The legacy PnP scripts (`Set-BoxToOneDriveItemPermission.ps1`, `Connect-SharePoi
 
 | Path | Purpose |
 |---|---|
-| `Update-UserFile.ps1` | Main script — resolves OneDrive items, uploads files, and grants permissions via Microsoft Graph |
-| `Test-AzureAppRegistration.ps1` | Validates that the Azure AD app registration has the required Graph permissions (`Files.ReadWrite.All`, `User.Read.All`) |
+| `Update-UserFile.ps1` | Main script — resolves OneDrive items, uploads files, and grants permissions via Microsoft Graph. Also runs as a pre-flight validator with `-Test`. |
+| `Set-NPSBoxEnv.ps1` | Helper to persist `NPSBOX_TENANT_ID`, `NPSBOX_CLIENT_ID`, and `NPSBOX_CERT_THUMBPRINT` as user-scope environment variables (consumed as parameter defaults by `Update-UserFile.ps1`). |
 | `UserInfo.csv` | Input CSV — Box collaboration data to process |
-| `tests/Update-UserFile.Tests.ps1` | Pester 5 test suite for `Update-UserFile.ps1` (57 tests; all Graph/file-system calls are mocked) |
-| `tests/Test-AzureAppRegistration.Tests.ps1` | Pester 5 test suite for `Test-AzureAppRegistration.ps1` |
+| `tests/Update-UserFile.Tests.ps1` | Pester 5 test suite for `Update-UserFile.ps1` (87 tests; all Graph/file-system calls are mocked) |
+| `tests/Test-AzureAppRegistration.Tests.ps1` | Pester 5 test suite that exercises the archived `holding/Test-AzureAppRegistration.ps1` validator (11 tests) |
 | `tests/results/` | Pester test result output (NUnit XML), named by version |
 | `LocalFiles/` | Per-user subfolders (named by UPN) containing files to upload with `-UploadFiles` |
 | `logs/` | Timestamped log output (git-ignored) |
-| `holding/` | Archived legacy files (`Box_Collaboration_Sample_Data.csv`, `setupcert.txt`) |
+| `en-US/about_Update-UserFile.help.txt` | About-topic help text shown when the script is invoked with no parameters |
+| `holding/` | Archived files: `Test-AzureAppRegistration.ps1` (validator, now folded into `-Test` mode), `Box_Collaboration_Sample_Data.csv`, `Top10.MD`, `setupcert.txt` |
 | `.github/` | GitHub Copilot customization files (instructions, agents, prompts) |
 | [`DISCLAIMER.MD`](DISCLAIMER.MD) | Disclaimer text |
 | [`assumptions.md`](assumptions.md) | Full assumptions and constraints audit |
@@ -94,10 +97,14 @@ For a given Box owner (user), the script:
    otherwise all unique owners in the CSV are processed.
 3. **Looks up** the user's OneDrive drive via the [Graph API](https://learn.microsoft.com/graph/overview).
 4. **Optionally uploads** local files and folders to the user's OneDrive (when `-UploadFiles` is specified).
-5. **Resolves each item** by path in OneDrive using the [`driveItem: get` API](https://learn.microsoft.com/graph/api/driveitem-get?view=graph-rest-1.0#access-a-driveitem-by-path).
-6. **Validates** the collaborator's domain against `-AllowedDomains` to prevent unintended external sharing.
-7. **Grants permissions** to each collaborator using the [`driveItem: invite` API](https://learn.microsoft.com/graph/api/driveitem-invite?view=graph-rest-1.0) with `sendInvitation = false` (no email notifications) and `requireSignIn = true`.
-8. **Outputs** a structured `[pscustomobject]` result per CSV row to the pipeline for reporting.
+5. **Validates each owner account** with `Get-MgUser` (exists, enabled) and verifies the OneDrive drive is provisioned and reachable before processing rows.
+6. **Deduplicates** CSV rows for each owner (same Path + Item Name + Collaborator Login + Permission) to reduce redundant API calls.
+7. **Resolves each item** by path in OneDrive using the [`driveItem: get` API](https://learn.microsoft.com/graph/api/driveitem-get?view=graph-rest-1.0#access-a-driveitem-by-path).
+8. **Validates** the collaborator's email format and domain against `-AllowedDomains` to prevent unintended external sharing.
+9. **Grants permissions** to each collaborator using the [`driveItem: invite` API](https://learn.microsoft.com/graph/api/driveitem-invite?view=graph-rest-1.0) with `sendInvitation = false` (no email notifications) and `requireSignIn = true`.
+10. **Outputs** a structured `[pscustomobject]` result per CSV row to the pipeline for reporting (see [Output objects](#output-objects)).
+
+When invoked with **no parameters**, the script displays its about-topic help (`en-US/about_Update-UserFile.help.txt`) and exits without authenticating.
 
 ### Prerequisites
 
@@ -116,10 +123,10 @@ Install-Module Microsoft.Graph.Applications    -Scope CurrentUser
   granted with admin consent:
   - `Files.ReadWrite.All`
   - `User.Read.All`
-  - `Application.Read.All` *(optional — enables startup permission validation via `Assert-GraphPermissions`; without it the check is skipped with a warning)*
+  - `Application.Read.All` *(optional — enables startup permission validation via `Assert-GraphPermissions` and detailed per-permission reporting in `-Test` mode; without it the check is reported as `Skipped`)*
   - [Register an application](https://learn.microsoft.com/entra/identity-platform/quickstart-register-app)
 - A certificate uploaded to the app registration — [Certificate credentials](https://learn.microsoft.com/entra/identity-platform/certificate-credentials)
-- Run `Test-AzureAppRegistration.ps1` to verify permissions before first use.
+- Run `Update-UserFile.ps1 -Test ...` to verify modules, assembly compatibility, certificate auth, and Graph permissions before your first migration.
 
 > **Important:** Do not load `PnP.PowerShell` in the same session. PnP.PowerShell bundles `Microsoft.Graph.Core` 1.x, which conflicts with the Graph SDK v2. Start a fresh `pwsh` session.
 
@@ -127,17 +134,32 @@ Install-Module Microsoft.Graph.Applications    -Scope CurrentUser
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `-InputFile` | `FileInfo` | No | `UserInfo.csv` | Path to the input CSV file |
-| `-UserToProcess` | `string` | No | — | Owner UPN to filter on. When omitted, all unique owners are processed. Accepts pipeline input. Aliases: `Owner Login`, `User`, `UPN`, `Account` |
-| `-TenantId` | `string` | No | — | Microsoft 365 tenant ID (GUID). [Find your tenant ID](https://learn.microsoft.com/entra/fundamentals/how-to-find-tenant) |
-| `-ClientId` | `string` | No | — | App registration client ID (GUID) |
-| `-CertificateThumbprint` | `string` | **Yes** | — | SHA-1 thumbprint of a certificate in `Cert:\CurrentUser\My` |
-| `-LogFolder` | `string` | No | `.\Logs` | Folder for timestamped log files |
-| `-AllFilesDirectory` | `string` | No | `.\LocalFiles` | Root folder containing per-user subfolders of local files to upload |
-| `-UploadFiles` | `switch` | No | — | When present, uploads local files to OneDrive before applying permissions |
-| `-AllowedDomains` | `string[]` | No | — | List of allowed email domains for collaborators. Blocks external sharing to unlisted domains. |
+| `-InputFile` | `FileInfo` | No | `C:\Repos\NPSBox\UserInfo.csv` | Path to the input CSV file |
+| `-UserToProcess` | `string` | No | — | Owner UPN to filter on. When omitted, all unique owners in the CSV are processed. Accepts pipeline input. Aliases: `Owner Login`, `User`, `UPN`, `Account` |
+| `-TenantId` | `string` | **Yes** | `$env:NPSBOX_TENANT_ID` | Microsoft 365 tenant ID (GUID). [Find your tenant ID](https://learn.microsoft.com/entra/fundamentals/how-to-find-tenant) |
+| `-ClientId` | `string` | **Yes** | `$env:NPSBOX_CLIENT_ID` | App registration client ID (GUID) |
+| `-CertificateThumbprint` | `string` | **Yes** | `$env:NPSBOX_CERT_THUMBPRINT` | SHA-1 thumbprint of a certificate in `Cert:\CurrentUser\My` |
+| `-LogFolder` | `string` | No | `C:\Repos\NPSBox\Logs` | Folder for timestamped log files |
+| `-AllFilesDirectory` | `string` | No | `C:\Repos\NPSBox\LocalFiles` | Root folder containing per-user subfolders of local files to upload |
+| `-UploadFiles` | `switch` | No | — | When present, uploads local files to OneDrive before applying permissions (parameter set `Run` only) |
+| `-AllowedDomains` | `string[]` | No | — | List of allowed email domains for collaborators. Blocks external sharing to unlisted domains. (parameter set `Run` only) |
+| `-Test` | `switch` | **Yes (`Test` set)** | — | Runs validation only (modules, assembly compatibility, certificate auth, Graph permissions) and exits without processing CSV rows. |
+
+The three credential parameters (`TenantId`, `ClientId`, `CertificateThumbprint`) are declared `Mandatory = $true` and read their defaults from environment variables — set them once with `Set-NPSBoxEnv.ps1` and you can omit them on the command line.
 
 Common parameters `-WhatIf`, `-Confirm`, and `-Verbose` are fully supported.
+
+### Parameter sets and operating modes
+
+The script declares three parameter sets that select how it runs:
+
+| Parameter set | Trigger | Behavior |
+|---|---|---|
+| `Help` (default) | No parameters supplied | Displays `en-US/about_Update-UserFile.help.txt` (or `Get-Help -Detailed` as fallback) and exits without authenticating. |
+| `Test` | `-Test` plus credentials | Runs the validation checklist (assembly compatibility, required modules, certificate auth, permission validation, and per-permission detail) and emits a structured `[pscustomobject]` per step. No CSV processing, no OneDrive writes. |
+| `Run` | Credentials supplied without `-Test` | Normal migration: reads CSV, optionally uploads files, grants permissions per row. |
+
+`-UploadFiles` and `-AllowedDomains` are only valid in the `Run` set.
 
 ### Box role mapping
 
@@ -256,7 +278,7 @@ $params = @{
 
 When `-UploadFiles` is specified, the script uploads local files from `<AllFilesDirectory>\<UserToProcess>\` to the user's OneDrive root before applying permissions.
 
-- Folders are created first (parent before child, sorted by path depth) via `PATCH` with a folder body and `@microsoft.graph.conflictBehavior = replace`. **Note:** `PATCH` for folder creation is undocumented; the [documented method](https://learn.microsoft.com/graph/api/driveitem-post-children) is `POST` to the parent's `/children`. The `replace` behavior on existing folders may risk data loss — see [`assumptions.md`](assumptions.md) U3.
+- Folders are created first (parent before child, sorted by path depth) via `POST /drives/{driveId}/root:/{parent}:/children` (or `/root/children` at the root) using the [documented `driveItem: post children` API](https://learn.microsoft.com/graph/api/driveitem-post-children?view=graph-rest-1.0) with `@microsoft.graph.conflictBehavior = fail`. A `409 nameAlreadyExists` response is treated as success so reruns are safe.
 - Files are uploaded via `PUT /drives/{driveId}/root:/{path}:/content` ([simple upload API](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0)).
 - Files larger than 4 MB are rejected with a clear error message. A [resumable upload session](https://learn.microsoft.com/graph/api/driveitem-createuploadsession?view=graph-rest-1.0) would be required for larger files (not implemented).
 - Use `-WhatIf` to preview what would be uploaded without making changes.
@@ -271,6 +293,28 @@ LocalFiles/
     Photos/
       vacation.jpg
 ```
+
+### Output objects
+
+The script emits one `[pscustomobject]` per CSV row with the following properties:
+
+| Property | Description |
+|---|---|
+| `OwnerLogin` | Owner UPN from the CSV |
+| `ItemName`, `Path`, `NormalizedPath` | Original CSV path/name and the OneDrive-relative path after stripping `All Files/` and re-encoding |
+| `CollaboratorLogin`, `CollaboratorPermission` | Source values from the CSV |
+| `GraphRole` | Mapped Graph role (`read` / `write`) or `$null` when the Box role has no equivalent |
+| `DriveId`, `OneDriveWebUrl` | Resolved drive identifier and the owner's OneDrive web URL |
+| `IsValidAccount` | `$true` when `Get-MgUser` confirmed the owner exists and is enabled |
+| `OneDriveProvisioned` | `$true` when the owner's OneDrive drive root was reachable |
+| `ExistsInOneDrive`, `DriveItemId` | Whether the target item was found by path, and its driveItem ID |
+| `Action` | `Granted`, `WhatIf`, `Skipped`, etc. |
+| `Status` | `Applied`, `WhatIf`, `Skipped`, or `Failed` |
+| `Error` | Error message when `Status = 'Failed'`; otherwise `$null` |
+
+When `-UploadFiles` is used, additional objects are emitted by `Invoke-OneDriveUpload` describing each folder/file operation (`OwnerLogin`, `LocalPath`, `OneDrivePath`, `ItemType`, `SizeBytes`, `Action`, `Status`, `Error`).
+
+When `-Test` is used, the output is a per-step validation report (`Step`, `Status`, `Detail`) plus per-permission rows from `Get-AppPermissionDetail` and a final `Overall` summary row.
 
 ### Logging
 
@@ -295,27 +339,59 @@ See [Microsoft Graph throttling guidance](https://learn.microsoft.com/graph/thro
 
 ### Known limitations
 
-- **Simple upload only:** Files larger than 4 MB require a resumable upload session, which is not implemented.
-- **Path translation:** Box paths prefixed with `All Files/` are stripped automatically. If your migration tool renamed items or altered folder hierarchy, paths may not resolve correctly.
-- **Box path encoding:** Special characters (spaces, parentheses, etc.) are URL-encoded per segment for the Graph API. Unusual characters may still cause issues.
-- **Unmapped roles:** Permissions with no Graph equivalent (`Previewer`, `Uploader`, `Previewer Uploader`) are skipped.
+- **Simple upload only:** Files larger than 4 MB require a resumable upload session, which is not implemented. The script throws a clear error rather than silently truncating.
+- **Path translation:** Box paths prefixed with `All Files/` are stripped automatically (case-insensitive). If your migration tool renamed items or altered folder hierarchy, paths may not resolve correctly.
+- **Box path encoding:** Special characters (spaces, parentheses, etc.) are URL-encoded per segment for the Graph API. Highly unusual characters may still cause issues.
+- **Unmapped roles:** Permissions with no Graph equivalent (`Previewer`, `Uploader`, `Previewer Uploader`) and any unrecognized role string are skipped with a log entry.
 - **No email notifications:** All permission grants use `sendInvitation = false`.
-- **No idempotency check:** Re-running re-grants every permission without checking existing roles. Granting a different role to an existing collaborator may create a second permission entry.
-- **No Graph batching:** Each permission grant is a separate HTTP request. Graph supports batching up to 20 requests (future enhancement).
-- **Folder creation uses undocumented PATCH upsert:** The [documented method](https://learn.microsoft.com/graph/api/driveitem-post-children) is `POST` to the parent's `/children` collection. The current PATCH approach works but is not guaranteed by the API contract and uses `conflictBehavior = replace`, which may risk data loss on existing folders.
-- **PnP.PowerShell conflict:** Do not import `PnP.PowerShell` in the same session. It loads `Microsoft.Graph.Core` 1.x, which is incompatible with Graph SDK v2. Start a fresh `pwsh` session.
+- **No idempotency check on permissions:** Re-running re-invokes the invite API for every row without checking existing roles. Granting a different role to an existing collaborator may create a second permission entry. (Folder creation *is* idempotent — a `409 nameAlreadyExists` is treated as success.)
+- **No Graph batching:** Each permission grant is a separate HTTP request. Graph supports batching up to 20 requests per call (future enhancement).
+- **OneDrive must be pre-provisioned:** If the owner's OneDrive site has not been created, the script fails for that owner with guidance to run `Request-SPOPersonalSite` or have the user sign in at https://portal.office.com. It does not provision OneDrive automatically.
+- **Email format validation is heuristic:** `Test-EmailFormat` uses a basic regex (`local@domain.tld`); it is not a full RFC 5322 implementation.
+- **Permission auto-validation requires `Application.Read.All`:** Without this permission, `Assert-GraphPermissions` reports `Skipped` and the script proceeds; you lose the pre-flight safety check.
+- **Hardcoded default paths:** `-InputFile`, `-LogFolder`, and `-AllFilesDirectory` default to absolute paths under `C:\Repos\NPSBox\`. Override them explicitly when running from a different working directory.
+- **PnP.PowerShell conflict:** Do not import `PnP.PowerShell` in the same session. It loads `Microsoft.Graph.Core` 1.x, which is incompatible with Graph SDK v2. The script detects this at startup via `Assert-GraphAssemblyCompatibility` and refuses to run.
 - **`Connect-Graph` alias collision:** The `Microsoft.Graph.Authentication` module exports `Connect-Graph` as an alias. Do not name custom functions `Connect-Graph` — use `Connect-GraphCertAuth` or a similar unique name to avoid silent delegation fallback.
-- Always run with `-WhatIf` first in a new tenant or against new datasets.
+- Always run with `-Test` (and then `-WhatIf`) first in a new tenant or against new datasets.
 
 ---
 
-## Test-AzureAppRegistration.ps1
+## Set-NPSBoxEnv.ps1
 
-A validation script that connects to Microsoft Graph using the same certificate-based auth and verifies the app registration has the required permissions (`Files.ReadWrite.All`, `User.Read.All`) with admin consent. Run this before your first migration to catch permission issues early.
+A small helper that persists three user-scope environment variables consumed as parameter defaults by `Update-UserFile.ps1`:
+
+| Variable | Used by parameter |
+|---|---|
+| `NPSBOX_TENANT_ID` | `-TenantId` |
+| `NPSBOX_CLIENT_ID` | `-ClientId` |
+| `NPSBOX_CERT_THUMBPRINT` | `-CertificateThumbprint` |
 
 ```powershell
-.\Test-AzureAppRegistration.ps1 -TenantId '<tenant-guid>' -ClientId '<app-guid>' -CertificateThumbprint '<thumbprint>' -Verbose
+.\Set-NPSBoxEnv.ps1 -TenantId '<tenant-guid>' -ClientId '<app-guid>' -CertificateThumbprint '<thumbprint>'
 ```
+
+Values are written via `[Environment]::SetEnvironmentVariable(..., 'User')` so they survive across PowerShell sessions, and are also set in the current session so they take effect immediately. To clear a value, set it to `$null` at the `User` scope (see the script's `.NOTES` block).
+
+> **Security note:** These variables are stored in plaintext in the user's environment block. Do not use this helper on shared workstations.
+
+---
+
+## Pre-flight validation (`-Test`)
+
+Run the main script with `-Test` to verify the environment without touching any user data:
+
+```powershell
+.\Update-UserFile.ps1 -Test -TenantId '<tenant-guid>' -ClientId '<app-guid>' -CertificateThumbprint '<thumbprint>' -Verbose
+```
+
+The script reports a structured result for each step:
+
+1. **Assembly compatibility** — confirms `Microsoft.Graph.Core` v3+ and that `PnP.PowerShell` is not loaded.
+2. **Required modules** — `Microsoft.Graph.Authentication`, `.Users`, `.Files`, `.Applications` are present and importable.
+3. **Certificate authentication** — `Connect-MgGraph` succeeds with the supplied thumbprint and tenant.
+4. **Permission validation** — required Graph application permissions are admin-consented (or `Skipped` if `Application.Read.All` is missing).
+5. **Permission detail** — per-permission `IsGranted` rows (same data as the archived `Test-AzureAppRegistration.ps1` validator).
+6. **Overall** — summary row with `Passed` or `Passed with warnings`.
 
 ---
 
@@ -331,6 +407,7 @@ The `.github/` directory contains [VS Code / GitHub Copilot customization files]
 | `instructions/powershell.instructions.md` | **PowerShell coding standards** — applied automatically when editing `*.ps1` files. Enforces Allman-style braces, `SupportsShouldProcess`, `Write-LogLine` logging, pipeline output conventions, and error-handling patterns. |
 | `agents/graph-api.agent.md` | **Graph API research agent** — read-only specialist for researching Microsoft Graph REST endpoints, SDK cmdlets, permissions, throttling, and error codes. |
 | `prompts/add-graph-operation.prompt.md` | **Reusable prompt** — scaffolds a new Graph API operation with retry logic, URL encoding, `ShouldProcess` guards, logging, and matching Pester tests. |
+| `prompts/learn-project.prompt.md` | **Reusable prompt** — onboarding walkthrough that summarizes the project layout, conventions, and key files. |
 | `prompts/run-tests.prompt.md` | **Reusable prompt** — runs the Pester 5 test suite and reports a pass/fail summary with failure details. |
 | `prompts/version-bump.prompt.md` | **Reusable prompt** — bumps the script version (revision, minor, or major) and date in the `.SYNOPSIS` block. |
 
@@ -352,6 +429,7 @@ See [`assumptions.md`](assumptions.md) for a comprehensive audit of security, pe
 
 | Version | Date | Summary |
 |---|---|---|
-| **1.2.1.0** | 2026-05-05 | Minor version bump. Added 11 new Pester tests covering: Viewer Uploader/Previewer Uploader/Uploader/unknown permission mapping, path edge cases (empty after prefix removal, whitespace-only, case-variant `ALL FILES`), and transient error classification (403 not retried, 404 not retried, 500 retried, timeout retried). Total: 68 tests (57 Update-UserFile + 11 App Registration). |
-| 1.2.0.17 | 2026-05-05 | **Critical fix:** Renamed `Connect-Graph` → `Connect-GraphCertAuth` to avoid alias collision with `Microsoft.Graph.Authentication` module. The module exports `Connect-Graph` as an alias for `Connect-MgGraph`; PowerShell resolves aliases before functions, causing the script's auth function to be silently bypassed. This resulted in delegated auth (wrong ClientId, insufficient permissions) instead of certificate-based app-only auth. Uploads and permission grants failed with `Authorization_RequestDenied`. All 57 Pester tests updated and passing. |
+| **1.2.2.4** | 2026-05-07 | README rewritten to match current functionality: documented `-Test` mode and Help mode (no parameters), added `Set-NPSBoxEnv.ps1` section, corrected parameter table (TenantId/ClientId are Mandatory; defaults come from `NPSBOX_*` env vars; absolute default paths), added Output objects section, updated File upload to reflect documented `POST /children` with `conflictBehavior=fail`, refreshed Known limitations, updated test count to 87 active tests for `Update-UserFile.ps1`. |
+| 1.2.1.0 | 2026-05-05 | Minor version bump. Added 11 new Pester tests covering: Viewer Uploader/Previewer Uploader/Uploader/unknown permission mapping, path edge cases (empty after prefix removal, whitespace-only, case-variant `ALL FILES`), and transient error classification (403 not retried, 404 not retried, 500 retried, timeout retried). |
+| 1.2.0.17 | 2026-05-05 | **Critical fix:** Renamed `Connect-Graph` → `Connect-GraphCertAuth` to avoid alias collision with `Microsoft.Graph.Authentication` module. The module exports `Connect-Graph` as an alias for `Connect-MgGraph`; PowerShell resolves aliases before functions, causing the script's auth function to be silently bypassed. This resulted in delegated auth (wrong ClientId, insufficient permissions) instead of certificate-based app-only auth. Uploads and permission grants failed with `Authorization_RequestDenied`. |
 | 1.2.0.16 | 2026-04-29 | Previous release |
