@@ -112,6 +112,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{
                     Id     = $script:DefaultDriveId
+                    Name   = 'OneDrive'
                     WebUrl = $script:DefaultWebUrl
                 }
             }
@@ -224,7 +225,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
@@ -305,7 +306,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
@@ -438,7 +439,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
 
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
@@ -481,6 +482,41 @@ Describe 'Update-UserFile.ps1' {
             $results[0].Error | Should -Match 'portal\.office\.com'
             $results[0].IsValidAccount | Should -Be $true
             $results[0].OneDriveProvisioned | Should -Be $false
+        }
+
+        It 'should select OneDrive when multiple drives are returned' {
+            $rows = @(New-CsvRow)
+            $rows | Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                @(
+                    [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl },
+                    [PSCustomObject]@{ Id = 'cache-drive-id'; Name = 'PersonalCacheLibrary'; WebUrl = 'https://contoso-my.sharepoint.com/personal/cache' }
+                )
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/root\?') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                elseif ($Uri -match '/root:/' -and $Method -eq 'GET') {
+                    return [PSCustomObject]@{ id = 'item-id'; name = 'TestItem' }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1
+
+            $results[0].Status | Should -Be 'Applied'
+            $results[0].DriveId | Should -Be $script:DefaultDriveId
         }
 
         It 'should set IsValidAccount to false when user account is not found' {
@@ -588,7 +624,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri, $Body)
@@ -660,7 +696,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
@@ -709,7 +745,7 @@ Describe 'Update-UserFile.ps1' {
                 if ($UserId -eq 'owner1@contoso.com') {
                     throw [System.Exception]::new('Drive not provisioned')
                 }
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
 
             $results = & {
@@ -770,7 +806,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
@@ -903,7 +939,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
@@ -990,7 +1026,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
         }
 
@@ -1102,7 +1138,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
@@ -1273,6 +1309,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{
                     Id     = $script:DefaultDriveId
+                    Name   = 'OneDrive'
                     WebUrl = $script:DefaultWebUrl
                 }
             }
@@ -1368,6 +1405,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{
                     Id     = $script:DefaultDriveId
+                    Name   = 'OneDrive'
                     WebUrl = $script:DefaultWebUrl
                 }
             }
@@ -1464,6 +1502,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
                 [PSCustomObject]@{
                     Id     = $script:DefaultDriveId
+                    Name   = 'OneDrive'
                     WebUrl = $script:DefaultWebUrl
                 }
             }
@@ -1706,7 +1745,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith { }
 
@@ -1881,7 +1920,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
@@ -1916,7 +1955,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
@@ -1992,7 +2031,7 @@ Describe 'Update-UserFile.ps1' {
                 [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
             }
             Mock -CommandName 'Get-MgUserDrive' -MockWith {
-                [PSCustomObject]@{ Id = $script:DefaultDriveId; WebUrl = $script:DefaultWebUrl }
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
             }
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
                 param($Method, $Uri)
