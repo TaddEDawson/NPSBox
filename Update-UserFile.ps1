@@ -8,8 +8,8 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.3
-    Date:    2026-05-05
+    Version: 1.2.2.4
+    Date:    2026-05-07
 
 .DESCRIPTION
     This script migrates Box collaboration data into OneDrive for Business.
@@ -1267,13 +1267,38 @@ begin
             $UserPrincipalName, $userAccount.DisplayName, $userAccount.AccountEnabled)
 
         # ── Step 2: Resolve the user's OneDrive drive ────────────────────────
+        # Get-MgUserDrive can return multiple drives (e.g. OneDrive and
+        # PersonalCacheLibrary).  We fetch all drives and filter to the one
+        # named 'OneDrive' so we always target the correct drive.
+        # https://learn.microsoft.com/powershell/module/microsoft.graph.files/get-mguserdrive
         Write-LogLine -Message ("Resolving OneDrive drive for owner: {0}" -f $UserPrincipalName)
         $userDrive = $null
         try
         {
-            $userDrive = Invoke-WithGraphRetry -OperationName ("Get-MgUserDrive for '{0}'" -f $UserPrincipalName) -Operation {
-                Get-MgUserDrive -UserId $UserPrincipalName -ErrorAction Stop
-            } # inline:$userDrive = Invoke-WithGraphRetry -Oper
+            $allDrives = Invoke-WithGraphRetry -OperationName ("Get-MgUserDrive for '{0}'" -f $UserPrincipalName) -Operation {
+                Get-MgUserDrive -UserId $UserPrincipalName -All -ErrorAction Stop
+            } # inline:$allDrives = Invoke-WithGraphRetry -Oper
+
+            # Filter to the OneDrive drive by Name.  Other drives such as
+            # PersonalCacheLibrary share the same DriveType but are not the
+            # user's primary document store.
+            $allDrives = @($allDrives)
+            if ($allDrives.Count -gt 1)
+            {
+                Write-LogLine -Message ("Multiple drives returned ({0}) for '{1}': {2}. Filtering to Name='OneDrive'." -f
+                    $allDrives.Count, $UserPrincipalName, (($allDrives | ForEach-Object { $_.Name }) -join ', '))
+            } # if
+
+            $userDrive = $allDrives | Where-Object { $_.Name -eq 'OneDrive' } | Select-Object -First 1
+
+            # Fallback: if no drive is named 'OneDrive' (older tenants or
+            # single-drive result), use the first drive returned.
+            if ($null -eq $userDrive -and $allDrives.Count -eq 1)
+            {
+                $userDrive = $allDrives[0]
+                Write-LogLine -Level 'WARN' -Message ("No drive named 'OneDrive' found for '{0}'. Using the only drive returned: Name='{1}', Id='{2}'." -f
+                    $UserPrincipalName, $userDrive.Name, $userDrive.Id)
+            } # if
         } # try
         catch
         {
