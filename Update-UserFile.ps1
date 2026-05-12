@@ -184,22 +184,22 @@ param
     ,
     # Your tenant ID (GUID).  Find it: Azure Portal > Entra ID > Overview.
     # Defaults to $env:NPSBOX_TENANT_ID if set.  Use Set-NPSBoxEnv.ps1 to persist.
-    [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
-    [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Run')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
     [string] $TenantId = $env:NPSBOX_TENANT_ID
     ,
     # The app registration's client ID (GUID).
     # Defaults to $env:NPSBOX_CLIENT_ID if set.  Use Set-NPSBoxEnv.ps1 to persist.
-    [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
-    [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Run')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
     [string] $ClientId = $env:NPSBOX_CLIENT_ID
     ,
     # Certificate thumbprint for app-only auth.
     # Defaults to $env:NPSBOX_CERT_THUMBPRINT if set.  Use Set-NPSBoxEnv.ps1 to persist.
-    [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
-    [Parameter(Mandatory = $true, ParameterSetName = 'Test')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Run')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Test')]
     [ValidateNotNullOrEmpty()]
     [string] $CertificateThumbprint = $env:NPSBOX_CERT_THUMBPRINT
     ,
@@ -244,7 +244,7 @@ begin
 {
     # ── Help mode: show help and exit when no parameters are provided ────────
     # DefaultParameterSetName = 'Help' activates when no params are supplied.
-    # Display the about_ help topic and return immediately.
+    # Display the about_help topic and return immediately.
     $script:HelpModeActive = $false
     if ($PSCmdlet.ParameterSetName -eq 'Help')
     {
