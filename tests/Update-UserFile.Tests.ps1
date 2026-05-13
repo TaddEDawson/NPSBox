@@ -868,11 +868,11 @@ Describe 'Update-UserFile.ps1' {
             $fileResult.PSObject.Properties.Name | Should -Contain 'Action'
             $fileResult.PSObject.Properties.Name | Should -Contain 'Status'
             $fileResult.PSObject.Properties.Name | Should -Contain 'DurationSec'
-            $fileResult.PSObject.Properties.Name | Should -Contain 'RateMBps'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'RateKBps'
             $fileResult.PSObject.Properties.Name | Should -Contain 'Error'
         }
 
-        It 'should report DurationSec and RateMBps on successful uploads' {
+        It 'should report DurationSec and RateKBps on successful uploads' {
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
                     -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
@@ -886,11 +886,11 @@ Describe 'Update-UserFile.ps1' {
                 $fr.Status      | Should -Be 'Completed'
                 $fr.DurationSec | Should -BeOfType ([double])
                 $fr.DurationSec | Should -BeGreaterOrEqual 0
-                $fr.RateMBps    | Should -BeOfType ([double])
-                $fr.RateMBps    | Should -BeGreaterOrEqual 0
+                $fr.RateKBps    | Should -BeOfType ([double])
+                $fr.RateKBps    | Should -BeGreaterOrEqual 0
                 # One decimal place: value should equal itself rounded to 1dp.
                 $fr.DurationSec | Should -Be ([Math]::Round($fr.DurationSec, 1))
-                $fr.RateMBps    | Should -Be ([Math]::Round($fr.RateMBps, 1))
+                $fr.RateKBps    | Should -Be ([Math]::Round($fr.RateKBps, 1))
             }
         }
 

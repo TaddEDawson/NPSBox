@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.9
+    Version: 1.2.2.10
     Date:    2026-05-13
 
 .DESCRIPTION
@@ -1131,7 +1131,7 @@ begin
                 Action       = 'UploadFile'
                 Status       = 'Unknown'
                 DurationSec  = 0.0
-                RateMBps     = 0.0
+                RateKBps     = 0.0
                 Error        = $null
             } # inline:$result = [pscustomobject]@{
 
@@ -1169,10 +1169,10 @@ begin
                     } # finally
                     $elapsedSec = $sw.Elapsed.TotalSeconds
                     $result.DurationSec = [Math]::Round($elapsedSec, 1)
-                    $rateMBps = if ($elapsedSec -gt 0) { ($file.Length / 1MB) / $elapsedSec } else { 0.0 }
-                    $result.RateMBps = [Math]::Round($rateMBps, 1)
+                    $rateKBps = if ($elapsedSec -gt 0) { ($file.Length / 1KB) / $elapsedSec } else { 0.0 }
+                    $result.RateKBps = [Math]::Round($rateKBps, 1)
                     $result.Status = 'Completed'
-                    Write-LogLine -Message ("Uploaded file ({0}): OneDrive:/{1} ({2} bytes) in {3:N1}s @ {4:N1} MB/sec" -f ($useResumable ? 'resumable' : 'simple'), $relativePath, $file.Length, $result.DurationSec, $result.RateMBps)
+                    Write-LogLine -Message ("Uploaded file ({0}): OneDrive:/{1} ({2} bytes) in {3:N1}s @ {4:N1} kB/sec" -f ($useResumable ? 'resumable' : 'simple'), $relativePath, $file.Length, $result.DurationSec, $result.RateKBps)
                 } # if
                 else
                 {
