@@ -2086,49 +2086,56 @@ Describe 'Update-UserFile.ps1' {
         }
     }
 
-    Context 'S3 - Mandatory Parameters (no hardcoded defaults)' {
+    Context 'S3 - Credential Validation (post-config)' {
         BeforeEach {
             $script:LogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_s3'
             New-Item -Path $script:LogFolder -ItemType Directory -Force | Out-Null
+            $script:S3TestCsv = Join-Path -Path $TestDrive -ChildPath 's3.csv'
+            @((New-CsvRow)) | Export-Csv -LiteralPath $script:S3TestCsv -NoTypeInformation -Encoding UTF8
+            $script:S3EmptyCfg = Join-Path -Path $TestDrive -ChildPath 's3_empty.json'
+            '{}' | Set-Content -LiteralPath $script:S3EmptyCfg -Encoding UTF8
         }
 
-        It 'should have TenantId as a mandatory parameter' {
+        It 'does NOT declare TenantId/ClientId/CertificateThumbprint as PowerShell-mandatory (config/env can supply them)' {
             $ast = [System.Management.Automation.Language.Parser]::ParseFile(
                 $script:ScriptUnderTest, [ref]$null, [ref]$null)
-            $tenantParam = $ast.ParamBlock.Parameters | Where-Object {
-                $_.Name.VariablePath.UserPath -eq 'TenantId'
+            foreach ($name in 'TenantId','ClientId','CertificateThumbprint')
+            {
+                $param = $ast.ParamBlock.Parameters | Where-Object {
+                    $_.Name.VariablePath.UserPath -eq $name
+                }
+                $mandatory = $param.Attributes | Where-Object {
+                    $_.TypeName.Name -eq 'Parameter' -and
+                    ($_.NamedArguments | Where-Object {
+                        $_.ArgumentName -eq 'Mandatory' -and $_.Argument.SafeGetValue() -eq $true
+                    })
+                }
+                $mandatory | Should -BeNullOrEmpty -Because "'$name' must be optional so config.json/env vars can supply it"
             }
-            $mandatory = $tenantParam.Attributes | Where-Object {
-                $_.TypeName.Name -eq 'Parameter' -and
-                ($_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' -and $_.Argument.SafeGetValue() -eq $true })
-            }
-            $mandatory | Should -Not -BeNullOrEmpty
         }
 
-        It 'should have ClientId as a mandatory parameter' {
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-                $script:ScriptUnderTest, [ref]$null, [ref]$null)
-            $clientParam = $ast.ParamBlock.Parameters | Where-Object {
-                $_.Name.VariablePath.UserPath -eq 'ClientId'
-            }
-            $mandatory = $clientParam.Attributes | Where-Object {
-                $_.TypeName.Name -eq 'Parameter' -and
-                ($_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' -and $_.Argument.SafeGetValue() -eq $true })
-            }
-            $mandatory | Should -Not -BeNullOrEmpty
+        It 'throws when TenantId is empty after config merge' {
+            { & {
+                . $script:ScriptUnderTest -InputFile $script:S3TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId '' -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint `
+                    -ConfigFile $script:S3EmptyCfg -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1 | Out-Null } | Should -Throw -ExpectedMessage '*TenantId*'
         }
 
-        It 'should have CertificateThumbprint as a mandatory parameter' {
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-                $script:ScriptUnderTest, [ref]$null, [ref]$null)
-            $certParam = $ast.ParamBlock.Parameters | Where-Object {
-                $_.Name.VariablePath.UserPath -eq 'CertificateThumbprint'
-            }
-            $mandatory = $certParam.Attributes | Where-Object {
-                $_.TypeName.Name -eq 'Parameter' -and
-                ($_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' -and $_.Argument.SafeGetValue() -eq $true })
-            }
-            $mandatory | Should -Not -BeNullOrEmpty
+        It 'throws when ClientId is empty after config merge' {
+            { & {
+                . $script:ScriptUnderTest -InputFile $script:S3TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId '' -CertificateThumbprint $script:DefaultThumbprint `
+                    -ConfigFile $script:S3EmptyCfg -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1 | Out-Null } | Should -Throw -ExpectedMessage '*ClientId*'
+        }
+
+        It 'throws when CertificateThumbprint is empty after config merge' {
+            { & {
+                . $script:ScriptUnderTest -InputFile $script:S3TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint '' `
+                    -ConfigFile $script:S3EmptyCfg -LogFolder $script:LogFolder -Verbose:$false
+            } 6>&1 | Out-Null } | Should -Throw -ExpectedMessage '*CertificateThumbprint*'
         }
     }
 

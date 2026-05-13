@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.5
+    Version: 1.2.2.6
     Date:    2026-05-13
 
 .DESCRIPTION
@@ -202,24 +202,24 @@ param
     [string] $UserToProcess
     ,
     # Your tenant ID (GUID).  Find it: Azure Portal > Entra ID > Overview.
-    # Defaults to $env:NPSBOX_TENANT_ID if set.  Use Set-NPSBoxEnv.ps1 to persist.
+    # Defaults to $env:NPSBOX_TENANT_ID if set, otherwise from -ConfigFile.
+    # Validated as non-empty in the begin block AFTER config merge.
     [Parameter(Mandatory = $false, ParameterSetName = 'Run')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Test')]
-    [ValidateNotNullOrEmpty()]
     [string] $TenantId = $env:NPSBOX_TENANT_ID
     ,
     # The app registration's client ID (GUID).
-    # Defaults to $env:NPSBOX_CLIENT_ID if set.  Use Set-NPSBoxEnv.ps1 to persist.
+    # Defaults to $env:NPSBOX_CLIENT_ID if set, otherwise from -ConfigFile.
+    # Validated as non-empty in the begin block AFTER config merge.
     [Parameter(Mandatory = $false, ParameterSetName = 'Run')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Test')]
-    [ValidateNotNullOrEmpty()]
     [string] $ClientId = $env:NPSBOX_CLIENT_ID
     ,
     # Certificate thumbprint for app-only auth.
-    # Defaults to $env:NPSBOX_CERT_THUMBPRINT if set.  Use Set-NPSBoxEnv.ps1 to persist.
+    # Defaults to $env:NPSBOX_CERT_THUMBPRINT if set, otherwise from -ConfigFile.
+    # Validated as non-empty in the begin block AFTER config merge.
     [Parameter(Mandatory = $false, ParameterSetName = 'Run')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Test')]
-    [ValidateNotNullOrEmpty()]
     [string] $CertificateThumbprint = $env:NPSBOX_CERT_THUMBPRINT
     ,
     # Where to write timestamped log files.  Created if it doesn't exist.
@@ -323,6 +323,18 @@ begin
     {
         Write-Verbose ("ConfigFile not found or not specified: {0}" -f $ConfigFile)
     } # else
+
+    # ── Validate required credentials (post-config) ────────────────────────────────────
+    # Validation runs here — after config merge — so config.json can supply
+    # credentials when neither the caller nor env vars provide them.
+    $missingCreds = @()
+    if ([string]::IsNullOrWhiteSpace($TenantId))              { $missingCreds += 'TenantId' }
+    if ([string]::IsNullOrWhiteSpace($ClientId))              { $missingCreds += 'ClientId' }
+    if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) { $missingCreds += 'CertificateThumbprint' }
+    if ($missingCreds.Count -gt 0)
+    {
+        throw ("Missing required credential value(s): {0}. Supply via parameter, -ConfigFile (config.json), or env vars NPSBOX_TENANT_ID/NPSBOX_CLIENT_ID/NPSBOX_CERT_THUMBPRINT." -f ($missingCreds -join ', '))
+    } # if
 
     # ── Write-LogLine ────────────────────────────────────────────────────────────
     # Writes a timestamped message to both the Verbose stream and a log file.
