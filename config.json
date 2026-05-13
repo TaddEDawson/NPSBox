@@ -1,0 +1,8 @@
+{
+    "InputFile":             "C:\\Repos\\NPSBox\\UserInfo.csv",
+    "TenantId":              "92075952-90f3-4613-833b-d2e19ec649e4",
+    "ClientId":              "912696b9-1374-4110-893d-545fc17c3371",
+    "CertificateThumbprint": "9D0F9B62AC3B002E56C2A304E88AD429813E55E2",
+    "LogFolder":             "C:\\Repos\\NPSBox\\Logs",
+    "AllFilesDirectory":     "C:\\Repos\\NPSBox\\LocalFiles"
+}

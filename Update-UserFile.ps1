@@ -8,8 +8,8 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.4
-    Date:    2026-05-07
+    Version: 1.2.2.5
+    Date:    2026-05-13
 
 .DESCRIPTION
     This script migrates Box collaboration data into OneDrive for Business.
@@ -69,6 +69,18 @@
       -Verbose   : Shows detailed progress messages.
       -Confirm   : Prompts for confirmation before each change.
       https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_commonparameters
+
+.PARAMETER ConfigFile
+    Path to a JSON configuration file used to supply default values for
+    InputFile, TenantId, ClientId, CertificateThumbprint, LogFolder, and
+    AllFilesDirectory.  Defaults to `config.json` in the script directory.
+    Precedence (highest first):
+      1. Explicit parameter values supplied on the command line.
+      2. Values from this JSON file (when the file exists and the key is set).
+      3. Environment variables (NPSBOX_TENANT_ID, NPSBOX_CLIENT_ID,
+         NPSBOX_CERT_THUMBPRINT) or hard-coded defaults.
+    Missing file is not an error — the script falls back to env vars/defaults.
+    https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/convertfrom-json
 
 .PARAMETER InputFile
     Path to the CSV file containing collaboration data.
@@ -173,6 +185,13 @@ param
     [Parameter(ParameterSetName = 'Test')]
     [System.IO.FileInfo] $InputFile = "C:\Repos\NPSBox\UserInfo.csv"
     ,
+    # Path to a JSON config file providing defaults for InputFile, TenantId,
+    # ClientId, CertificateThumbprint, LogFolder, and AllFilesDirectory.
+    # Defaults to config.json beside this script.  Missing file is OK.
+    [Parameter(ParameterSetName = 'Run')]
+    [Parameter(ParameterSetName = 'Test')]
+    [string] $ConfigFile = (Join-Path -Path $PSScriptRoot -ChildPath 'config.json')
+    ,
     # The owner's UPN to filter on in the CSV.
     # ValueFromPipeline lets you pipe UPNs:  'user1@contoso.com','user2@contoso.com' | .\Update-UserFile.ps1
     # Alias allows matching CSV column names directly for pipeline binding.
@@ -261,6 +280,49 @@ begin
         $script:HelpModeActive = $true
         return
     } # if — Help mode
+
+    # ── Load defaults from ConfigFile ────────────────────────────────────────────
+    # Apply values from the JSON config to any parameter the caller did NOT
+    # explicitly bind.  This lets users keep tenant/cert/path settings in a
+    # config.json beside the script instead of passing them every invocation.
+    # Precedence: explicit parameter > config.json > env var / hard-coded default.
+    # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/convertfrom-json
+    if (-not [string]::IsNullOrWhiteSpace($ConfigFile) -and (Test-Path -LiteralPath $ConfigFile -PathType Leaf))
+    {
+        try
+        {
+            $configData = Get-Content -LiteralPath $ConfigFile -Raw -ErrorAction Stop |
+                ConvertFrom-Json -ErrorAction Stop
+            Write-Verbose ("Loaded configuration from {0}" -f $ConfigFile)
+
+            $configMap = @{
+                InputFile             = 'InputFile'
+                TenantId              = 'TenantId'
+                ClientId              = 'ClientId'
+                CertificateThumbprint = 'CertificateThumbprint'
+                LogFolder             = 'LogFolder'
+                AllFilesDirectory     = 'AllFilesDirectory'
+            }
+            foreach ($key in $configMap.Keys)
+            {
+                # Only override when the caller did not explicitly supply the parameter.
+                if ($PSBoundParameters.ContainsKey($key)) { continue }
+                if (-not ($configData.PSObject.Properties.Name -contains $key)) { continue }
+                $value = $configData.$key
+                if ($null -eq $value -or ($value -is [string] -and [string]::IsNullOrWhiteSpace($value))) { continue }
+                Set-Variable -Name $configMap[$key] -Value $value -Scope 0
+                Write-Verbose ("Config override: {0} = {1}" -f $key, $value)
+            } # foreach — config key
+        } # try
+        catch
+        {
+            Write-Warning ("Failed to read ConfigFile '{0}': {1}" -f $ConfigFile, $_.Exception.Message)
+        } # catch
+    } # if — ConfigFile exists
+    else
+    {
+        Write-Verbose ("ConfigFile not found or not specified: {0}" -f $ConfigFile)
+    } # else
 
     # ── Write-LogLine ────────────────────────────────────────────────────────────
     # Writes a timestamped message to both the Verbose stream and a log file.
