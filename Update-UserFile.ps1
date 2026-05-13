@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.8
+    Version: 1.2.2.9
     Date:    2026-05-13
 
 .DESCRIPTION
@@ -1130,6 +1130,8 @@ begin
                 SizeBytes    = $file.Length
                 Action       = 'UploadFile'
                 Status       = 'Unknown'
+                DurationSec  = 0.0
+                RateMBps     = 0.0
                 Error        = $null
             } # inline:$result = [pscustomobject]@{
 
@@ -1146,19 +1148,31 @@ begin
                 $shouldProcessAction = if ($useResumable) { 'Upload file (resumable)' } else { 'Upload file' }
                 if ($PSCmdlet.ShouldProcess($shouldProcessTarget, $shouldProcessAction))
                 {
-                    if ($useResumable)
+                    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+                    try
                     {
-                        Invoke-OneDriveResumableUpload -DriveId $DriveId -EncodedRelPath $encodedRelPath -LocalFilePath $file.FullName | Out-Null
-                    } # if
-                    else
+                        if ($useResumable)
+                        {
+                            Invoke-OneDriveResumableUpload -DriveId $DriveId -EncodedRelPath $encodedRelPath -LocalFilePath $file.FullName | Out-Null
+                        } # if
+                        else
+                        {
+                            $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                            Invoke-WithGraphRetry -OperationName ("Upload file '{0}'" -f $relativePath) -Operation {
+                                Invoke-MgGraphRequest -Method PUT -Uri $uploadUri -Body $fileBytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
+                            } # inline:Invoke-WithGraphRetry — simple upload PUT
+                        } # else
+                    } # try
+                    finally
                     {
-                        $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
-                        Invoke-WithGraphRetry -OperationName ("Upload file '{0}'" -f $relativePath) -Operation {
-                            Invoke-MgGraphRequest -Method PUT -Uri $uploadUri -Body $fileBytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
-                        } # inline:Invoke-WithGraphRetry — simple upload PUT
-                    } # else
+                        $sw.Stop()
+                    } # finally
+                    $elapsedSec = $sw.Elapsed.TotalSeconds
+                    $result.DurationSec = [Math]::Round($elapsedSec, 1)
+                    $rateMBps = if ($elapsedSec -gt 0) { ($file.Length / 1MB) / $elapsedSec } else { 0.0 }
+                    $result.RateMBps = [Math]::Round($rateMBps, 1)
                     $result.Status = 'Completed'
-                    Write-LogLine -Message ("Uploaded file ({0}): OneDrive:/{1} ({2} bytes)" -f ($useResumable ? 'resumable' : 'simple'), $relativePath, $file.Length)
+                    Write-LogLine -Message ("Uploaded file ({0}): OneDrive:/{1} ({2} bytes) in {3:N1}s @ {4:N1} MB/sec" -f ($useResumable ? 'resumable' : 'simple'), $relativePath, $file.Length, $result.DurationSec, $result.RateMBps)
                 } # if
                 else
                 {

@@ -867,7 +867,31 @@ Describe 'Update-UserFile.ps1' {
             $fileResult.PSObject.Properties.Name | Should -Contain 'SizeBytes'
             $fileResult.PSObject.Properties.Name | Should -Contain 'Action'
             $fileResult.PSObject.Properties.Name | Should -Contain 'Status'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'DurationSec'
+            $fileResult.PSObject.Properties.Name | Should -Contain 'RateMBps'
             $fileResult.PSObject.Properties.Name | Should -Contain 'Error'
+        }
+
+        It 'should report DurationSec and RateMBps on successful uploads' {
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -Verbose:$false
+            } 6>&1
+
+            $fileResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' }
+            $fileResults | Should -Not -BeNullOrEmpty
+            foreach ($fr in $fileResults)
+            {
+                $fr.Status      | Should -Be 'Completed'
+                $fr.DurationSec | Should -BeOfType ([double])
+                $fr.DurationSec | Should -BeGreaterOrEqual 0
+                $fr.RateMBps    | Should -BeOfType ([double])
+                $fr.RateMBps    | Should -BeGreaterOrEqual 0
+                # One decimal place: value should equal itself rounded to 1dp.
+                $fr.DurationSec | Should -Be ([Math]::Round($fr.DurationSec, 1))
+                $fr.RateMBps    | Should -Be ([Math]::Round($fr.RateMBps, 1))
+            }
         }
 
         It 'should throw when user local folder does not exist' {

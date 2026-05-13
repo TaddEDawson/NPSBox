@@ -353,7 +353,7 @@ The script emits one `[pscustomobject]` per CSV row with the following propertie
 | `Status` | `Applied`, `WhatIf`, `Skipped`, or `Failed` |
 | `Error` | Error message when `Status = 'Failed'`; otherwise `$null` |
 
-When `-UploadFiles` is used, additional objects are emitted by `Invoke-OneDriveUpload` describing each folder/file operation (`OwnerLogin`, `LocalPath`, `OneDrivePath`, `ItemType`, `SizeBytes`, `Action`, `Status`, `Error`).
+When `-UploadFiles` is used, additional objects are emitted by `Invoke-OneDriveUpload` describing each folder/file operation (`OwnerLogin`, `LocalPath`, `OneDrivePath`, `ItemType`, `SizeBytes`, `Action`, `Status`, `DurationSec`, `RateMBps`, `Error`). For `UploadFile` results, `Status` is one of `Completed`, `Incomplete`, or `WhatIf`; `DurationSec` is the elapsed upload time in seconds (one decimal) and `RateMBps` is the throughput in MB/sec (one decimal). Both are `0.0` for `WhatIf` previews.
 
 When `-Test` is used, the output is a per-step validation report (`Step`, `Status`, `Detail`) plus per-permission rows from `Get-AppPermissionDetail` and a final `Overall` summary row.
 
