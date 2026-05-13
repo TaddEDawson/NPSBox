@@ -894,15 +894,40 @@ Describe 'Update-UserFile.ps1' {
             }
         }
 
-        It 'should throw when user local folder does not exist' {
+        It 'should warn but not throw when user local folder does not exist' {
             $emptyRoot = Join-Path -Path $TestDrive -ChildPath 'EmptyLocalFiles'
             New-Item -Path $emptyRoot -ItemType Directory -Force | Out-Null
 
-            { & {
+            $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
                     -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
                     -AllFilesDirectory $emptyRoot -UploadFiles -Verbose:$false
-            } } | Should -Throw '*not found*'
+            } 6>&1
+
+            $uploadResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -in @('CreateFolder', 'UploadFile') }
+            $uploadResults | Should -BeNullOrEmpty
+        }
+
+        It 'should upload for users with a local folder but no CSV rows' {
+            # Build a fresh AllFilesDirectory containing ONE user folder for a
+            # UPN that does NOT appear in the CSV.  With -UploadFiles, the
+            # script should still discover that folder and upload its contents.
+            $uploadOnlyRoot = Join-Path -Path $TestDrive -ChildPath 'UploadOnlyRoot'
+            $uploadOnlyUpn  = 'NotInCsv@contoso.onmicrosoft.com'
+            $uploadOnlyDir  = Join-Path -Path $uploadOnlyRoot -ChildPath $uploadOnlyUpn
+            New-Item -Path $uploadOnlyDir -ItemType Directory -Force | Out-Null
+            'hello' | Set-Content -LiteralPath (Join-Path -Path $uploadOnlyDir -ChildPath 'OnlyFile.txt') -Encoding UTF8
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $uploadOnlyUpn `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $uploadOnlyRoot -UploadFiles -Verbose:$false
+            } 6>&1
+
+            $uploadFileResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' }
+            $uploadFileResults | Should -Not -BeNullOrEmpty
+            $uploadFileResults[0].OwnerLogin | Should -Be $uploadOnlyUpn
+            $uploadFileResults[0].Status     | Should -Be 'Completed'
         }
 
         It 'should not upload when UploadFiles is not specified' {

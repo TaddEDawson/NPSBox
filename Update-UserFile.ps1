@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.12
+    Version: 1.2.2.13
     Date:    2026-05-13
 
 .DESCRIPTION
@@ -1761,7 +1761,10 @@ process
     if (-not $allRows)
     {
         Write-LogLine -Level 'WARN' -Message "No CSV rows found to process."
-        return
+        if (-not $UploadFiles)
+        {
+            return
+        } # if
     } # if
 
     # Get unique owner UPNs from the CSV rows.
@@ -1772,12 +1775,33 @@ process
         Where-Object { -not [string]::IsNullOrWhiteSpace($_.'Owner Login') } |
         Group-Object -Property 'Owner Login' -AsHashTable -AsString
 
-    if ($null -eq $ownerGroups -or $ownerGroups.Count -eq 0)
+    if ($null -eq $ownerGroups) { $ownerGroups = @{} }
+
+    # Start with owners that appear in the CSV.
+    $uniqueOwners = [System.Collections.Generic.List[string]]::new()
+    foreach ($k in $ownerGroups.Keys) { [void] $uniqueOwners.Add($k) }
+
+    # When -UploadFiles is set, also include any UPN-named subdirectory under
+    # AllFilesDirectory so files/folders are uploaded even for users that have
+    # no permission rows in the CSV.
+    if ($UploadFiles -and -not [string]::IsNullOrWhiteSpace($AllFilesDirectory) -and (Test-Path -LiteralPath $AllFilesDirectory))
     {
-        throw "Owner Login is empty in all CSV rows."
+        $localDirs = Get-ChildItem -LiteralPath $AllFilesDirectory -Directory -ErrorAction SilentlyContinue
+        foreach ($d in $localDirs)
+        {
+            if (-not [string]::IsNullOrWhiteSpace($UserToProcess) -and $d.Name -ne $UserToProcess) { continue }
+            if (-not ($uniqueOwners -contains $d.Name))
+            {
+                [void] $uniqueOwners.Add($d.Name)
+                Write-LogLine -Message ("Including upload-only owner from local directory: {0}" -f $d.Name)
+            } # if
+        } # foreach
     } # if
 
-    $uniqueOwners = @($ownerGroups.Keys)
+    if ($uniqueOwners.Count -eq 0)
+    {
+        throw "No owners to process: CSV has no 'Owner Login' values and no local upload folders were found."
+    } # if
 
     Write-LogLine -Message ("Processing {0} unique owner(s): {1}" -f $uniqueOwners.Count, ($uniqueOwners -join ', '))
 
@@ -1790,7 +1814,8 @@ process
         # Duplicate rows (same Owner + Path + Item Name + Collaborator Login)
         # waste API calls; the invite API is idempotent but we skip duplicates
         # to reduce noise and throttling risk.
-        $ownerRows = $ownerGroups[$ownerUpn]
+        # $ownerRows is empty when this owner has no CSV rows (upload-only mode).
+        $ownerRows = if ($ownerGroups.ContainsKey($ownerUpn)) { @($ownerGroups[$ownerUpn]) } else { @() }
         $deduplicatedRows = @($ownerRows |
             Sort-Object -Property 'Path', 'Item Name', 'Collaborator Login', 'Collaborator Permission' -Unique)
         $duplicateCount = $ownerRows.Count - $deduplicatedRows.Count
@@ -1842,14 +1867,29 @@ process
         # -- Upload local files if -UploadFiles is specified ----------------------
         # The local folder must be named by the user's UPN under AllFilesDirectory.
         # Example: C:\Repos\NPSBox\LocalFiles\user@contoso.com\
+        # Uploads run BEFORE permissions so that files/folders referenced by the
+        # CSV exist in OneDrive when the invite calls are made. Owners that have
+        # only a local folder (no CSV rows) are still uploaded for.
         if ($UploadFiles)
         {
             $userLocalPath = Join-Path -Path $AllFilesDirectory -ChildPath $ownerUpn
-            Write-LogLine -Message ("Uploading local files from '{0}' to OneDrive for '{1}'." -f $userLocalPath, $ownerUpn)
-            Invoke-OneDriveUpload -DriveId $drive.Id -LocalSourcePath $userLocalPath -OwnerUpn $ownerUpn
+            if (Test-Path -LiteralPath $userLocalPath)
+            {
+                Write-LogLine -Message ("Uploading local files from '{0}' to OneDrive for '{1}'." -f $userLocalPath, $ownerUpn)
+                Invoke-OneDriveUpload -DriveId $drive.Id -LocalSourcePath $userLocalPath -OwnerUpn $ownerUpn
+            } # if
+            else
+            {
+                Write-LogLine -Level 'WARN' -Message ("No local upload folder found for '{0}' at '{1}'. Skipping upload." -f $ownerUpn, $userLocalPath)
+            } # else
         } # if
 
         # -- Process each CSV row for this owner: resolve item, grant permission --
+        if ($rows.Count -eq 0)
+        {
+            Write-LogLine -Message ("No CSV permission rows for owner '{0}'; upload-only." -f $ownerUpn)
+            continue
+        } # if
         foreach ($row in $rows)
         {
             $itemPath = [string] $row.Path
