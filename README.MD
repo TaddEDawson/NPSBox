@@ -34,6 +34,7 @@ The legacy PnP scripts (`Set-BoxToOneDriveItemPermission.ps1`, `Connect-SharePoi
   - [Prerequisites](#prerequisites)
   - [Parameters](#parameters)
   - [Parameter sets and operating modes](#parameter-sets-and-operating-modes)
+  - [Configuration file (config.json)](#configuration-file-configjson)
   - [Box role mapping](#box-role-mapping)
   - [Authentication](#authentication)
   - [Usage examples](#usage-examples)
@@ -54,6 +55,7 @@ The legacy PnP scripts (`Set-BoxToOneDriveItemPermission.ps1`, `Connect-SharePoi
 | Path | Purpose |
 |---|---|
 | `Update-UserFile.ps1` | Main script — resolves OneDrive items, uploads files, and grants permissions via Microsoft Graph. Also runs as a pre-flight validator with `-Test`. |
+| `config.json` | Optional JSON config providing defaults for `InputFile`, `TenantId`, `ClientId`, `CertificateThumbprint`, `LogFolder`, and `AllFilesDirectory`. Loaded automatically from the script directory when present. |
 | `Set-NPSBoxEnv.ps1` | Helper to persist `NPSBOX_TENANT_ID`, `NPSBOX_CLIENT_ID`, and `NPSBOX_CERT_THUMBPRINT` as user-scope environment variables (consumed as parameter defaults by `Update-UserFile.ps1`). |
 | `UserInfo.csv` | Input CSV — Box collaboration data to process |
 | `tests/Update-UserFile.Tests.ps1` | Pester 5 test suite for `Update-UserFile.ps1` (87 tests; all Graph/file-system calls are mocked) |
@@ -134,18 +136,25 @@ Install-Module Microsoft.Graph.Applications    -Scope CurrentUser
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
+| `-ConfigFile` | `string` | No | `<script>\config.json` | Path to a JSON config file providing defaults for `InputFile`, `TenantId`, `ClientId`, `CertificateThumbprint`, `LogFolder`, and `AllFilesDirectory`. Missing file is OK. See [Configuration file (config.json)](#configuration-file-configjson). |
 | `-InputFile` | `FileInfo` | No | `C:\Repos\NPSBox\UserInfo.csv` | Path to the input CSV file |
 | `-UserToProcess` | `string` | No | — | Owner UPN to filter on. When omitted, all unique owners in the CSV are processed. Accepts pipeline input. Aliases: `Owner Login`, `User`, `UPN`, `Account` |
-| `-TenantId` | `string` | **Yes** | `$env:NPSBOX_TENANT_ID` | Microsoft 365 tenant ID (GUID). [Find your tenant ID](https://learn.microsoft.com/entra/fundamentals/how-to-find-tenant) |
-| `-ClientId` | `string` | **Yes** | `$env:NPSBOX_CLIENT_ID` | App registration client ID (GUID) |
-| `-CertificateThumbprint` | `string` | **Yes** | `$env:NPSBOX_CERT_THUMBPRINT` | SHA-1 thumbprint of a certificate in `Cert:\CurrentUser\My` |
+| `-TenantId` | `string` | No | config.json &rarr; `$env:NPSBOX_TENANT_ID` | Microsoft 365 tenant ID (GUID). [Find your tenant ID](https://learn.microsoft.com/entra/fundamentals/how-to-find-tenant) |
+| `-ClientId` | `string` | No | config.json &rarr; `$env:NPSBOX_CLIENT_ID` | App registration client ID (GUID) |
+| `-CertificateThumbprint` | `string` | No | config.json &rarr; `$env:NPSBOX_CERT_THUMBPRINT` | SHA-1 thumbprint of a certificate in `Cert:\CurrentUser\My` |
 | `-LogFolder` | `string` | No | `C:\Repos\NPSBox\Logs` | Folder for timestamped log files |
 | `-AllFilesDirectory` | `string` | No | `C:\Repos\NPSBox\LocalFiles` | Root folder containing per-user subfolders of local files to upload |
 | `-UploadFiles` | `switch` | No | — | When present, uploads local files to OneDrive before applying permissions (parameter set `Run` only) |
 | `-AllowedDomains` | `string[]` | No | — | List of allowed email domains for collaborators. Blocks external sharing to unlisted domains. (parameter set `Run` only) |
 | `-Test` | `switch` | **Yes (`Test` set)** | — | Runs validation only (modules, assembly compatibility, certificate auth, Graph permissions) and exits without processing CSV rows. |
 
-The three credential parameters (`TenantId`, `ClientId`, `CertificateThumbprint`) are declared `Mandatory = $true` and read their defaults from environment variables — set them once with `Set-NPSBoxEnv.ps1` and you can omit them on the command line.
+The credential parameters (`TenantId`, `ClientId`, `CertificateThumbprint`) are optional on the command line — values are resolved in this order (highest first):
+
+1. Explicit `-TenantId` / `-ClientId` / `-CertificateThumbprint` on the command line.
+2. Values from `config.json` (or whatever `-ConfigFile` points at).
+3. Environment variables `NPSBOX_TENANT_ID`, `NPSBOX_CLIENT_ID`, `NPSBOX_CERT_THUMBPRINT` (see [`Set-NPSBoxEnv.ps1`](#set-npsboxenvps1)).
+
+If none of the three sources provides a value, `ValidateNotNullOrEmpty()` rejects the empty string and the script aborts.
 
 Common parameters `-WhatIf`, `-Confirm`, and `-Verbose` are fully supported.
 
@@ -160,6 +169,33 @@ The script declares three parameter sets that select how it runs:
 | `Run` | Credentials supplied without `-Test` | Normal migration: reads CSV, optionally uploads files, grants permissions per row. |
 
 `-UploadFiles` and `-AllowedDomains` are only valid in the `Run` set.
+
+### Configuration file (config.json)
+
+When `Update-UserFile.ps1` starts (in `Run` or `Test` mode) it looks for a JSON file at the path supplied via `-ConfigFile` (default: `config.json` next to the script). Any keys present in that file become **defaults** for the matching parameters — but only for parameters the caller did not pass explicitly on the command line.
+
+**Recognised keys:**
+
+```json
+{
+    "InputFile":             "C:\\Repos\\NPSBox\\UserInfo.csv",
+    "TenantId":              "<tenant-guid>",
+    "ClientId":              "<app-guid>",
+    "CertificateThumbprint": "<sha1-thumbprint>",
+    "LogFolder":             "C:\\Repos\\NPSBox\\Logs",
+    "AllFilesDirectory":     "C:\\Repos\\NPSBox\\LocalFiles"
+}
+```
+
+**Behaviour:**
+
+- **Precedence:** explicit parameter &gt; `config.json` &gt; environment variable / hard-coded default.
+- **Missing file:** silently ignored — the script falls back to env vars and built-in defaults. A verbose message records the path that was checked.
+- **Empty or whitespace values:** ignored (so you can keep blank placeholders in a checked-in template).
+- **Unrecognised keys:** ignored.
+- **Malformed JSON:** a warning is written and the script continues with env vars / defaults.
+
+> **Security note:** `config.json` contains tenant/client/thumbprint identifiers. Treat it the same way you would treat `Set-NPSBoxEnv.ps1` inputs — add it to `.gitignore` (or commit only a sanitised template) before checking changes in.
 
 ### Box role mapping
 

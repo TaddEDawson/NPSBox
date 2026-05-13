@@ -2176,6 +2176,135 @@ Describe 'Update-UserFile.ps1' {
             $output | Should -Not -BeNullOrEmpty
         }
     }
+
+    Context 'ConfigFile - JSON Configuration' {
+        BeforeEach {
+            $script:TestCsv = Join-Path -Path $TestDrive -ChildPath 'config_test.csv'
+            @((New-CsvRow -ItemName 'Doc1.txt' -CollaboratorPermission 'Editor')) |
+                Export-Csv -LiteralPath $script:TestCsv -NoTypeInformation -Encoding UTF8
+
+            # Standard mocks shared by all functional tests in this context.
+            Mock -CommandName 'Assert-RequiredModules' -MockWith { }
+            Mock -CommandName 'Assert-GraphAssemblyCompatibility' -MockWith { }
+            Mock -CommandName 'Assert-GraphPermissions' -MockWith { }
+            Mock -CommandName 'Assert-CsvColumns' -MockWith { }
+            Mock -CommandName 'Connect-GraphCertAuth' -MockWith { }
+            Mock -CommandName 'Connect-MgGraph' -MockWith { }
+            Mock -CommandName 'Disconnect-MgGraph' -MockWith { }
+            Mock -CommandName 'Get-MgUser' -MockWith {
+                [PSCustomObject]@{ Id = 'user-guid'; DisplayName = 'Test User'; UserPrincipalName = 'test@contoso.com'; AccountEnabled = $true }
+            }
+            Mock -CommandName 'Get-MgUserDrive' -MockWith {
+                [PSCustomObject]@{ Id = $script:DefaultDriveId; Name = 'OneDrive'; WebUrl = $script:DefaultWebUrl }
+            }
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
+            }
+        }
+
+        It 'declares -ConfigFile defaulting to config.json beside the script' {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $script:ScriptUnderTest, [ref]$null, [ref]$null)
+            $cfgParam = $ast.ParamBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'ConfigFile'
+            }
+            $cfgParam | Should -Not -BeNullOrEmpty
+            # Default expression should reference $PSScriptRoot and 'config.json'.
+            $defaultText = $cfgParam.DefaultValue.Extent.Text
+            $defaultText | Should -Match 'PSScriptRoot'
+            $defaultText | Should -Match 'config\.json'
+        }
+
+        It 'loads LogFolder from config.json when -LogFolder is not supplied' {
+            $cfgLogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_from_config'
+            New-Item -Path $cfgLogFolder -ItemType Directory -Force | Out-Null
+            $cfg = Join-Path -Path $TestDrive -ChildPath 'cfg_loads.json'
+            @{ LogFolder = $cfgLogFolder } | ConvertTo-Json | Set-Content -LiteralPath $cfg -Encoding UTF8
+
+            & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId `
+                    -CertificateThumbprint $script:DefaultThumbprint -ConfigFile $cfg -Verbose:$false
+            } 6>&1 | Out-Null
+
+            (Get-ChildItem -Path $cfgLogFolder -Filter 'Update-UserFile_*.log' -ErrorAction SilentlyContinue) |
+                Should -Not -BeNullOrEmpty
+        }
+
+        It 'prefers explicit -LogFolder over the value in config.json' {
+            $cfgLogFolder      = Join-Path -Path $TestDrive -ChildPath 'logs_ignored'
+            $explicitLogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_explicit'
+            New-Item -Path $cfgLogFolder      -ItemType Directory -Force | Out-Null
+            New-Item -Path $explicitLogFolder -ItemType Directory -Force | Out-Null
+            $cfg = Join-Path -Path $TestDrive -ChildPath 'cfg_override.json'
+            @{ LogFolder = $cfgLogFolder } | ConvertTo-Json | Set-Content -LiteralPath $cfg -Encoding UTF8
+
+            & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId `
+                    -CertificateThumbprint $script:DefaultThumbprint -ConfigFile $cfg `
+                    -LogFolder $explicitLogFolder -Verbose:$false
+            } 6>&1 | Out-Null
+
+            (Get-ChildItem -Path $explicitLogFolder -Filter 'Update-UserFile_*.log' -ErrorAction SilentlyContinue) |
+                Should -Not -BeNullOrEmpty
+            (Get-ChildItem -Path $cfgLogFolder -Filter 'Update-UserFile_*.log' -ErrorAction SilentlyContinue) |
+                Should -BeNullOrEmpty
+        }
+
+        It 'does not error when the config file is missing' {
+            $logFolder = Join-Path -Path $TestDrive -ChildPath 'logs_missingcfg'
+            New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
+            $missing = Join-Path -Path $TestDrive -ChildPath 'does_not_exist.json'
+
+            { & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId `
+                    -CertificateThumbprint $script:DefaultThumbprint -ConfigFile $missing `
+                    -LogFolder $logFolder -Verbose:$false
+            } 6>&1 | Out-Null } | Should -Not -Throw
+        }
+
+        It 'ignores empty/whitespace values in config.json' {
+            $explicitLogFolder = Join-Path -Path $TestDrive -ChildPath 'logs_emptycfg'
+            New-Item -Path $explicitLogFolder -ItemType Directory -Force | Out-Null
+            $cfg = Join-Path -Path $TestDrive -ChildPath 'cfg_empty.json'
+            # Blank LogFolder must NOT clobber the explicit/default value.
+            @{ LogFolder = '   '; AllFilesDirectory = '' } | ConvertTo-Json |
+                Set-Content -LiteralPath $cfg -Encoding UTF8
+
+            & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId `
+                    -CertificateThumbprint $script:DefaultThumbprint -ConfigFile $cfg `
+                    -LogFolder $explicitLogFolder -Verbose:$false
+            } 6>&1 | Out-Null
+
+            (Get-ChildItem -Path $explicitLogFolder -Filter 'Update-UserFile_*.log' -ErrorAction SilentlyContinue) |
+                Should -Not -BeNullOrEmpty
+        }
+
+        It 'warns but does not throw on malformed JSON' {
+            $logFolder = Join-Path -Path $TestDrive -ChildPath 'logs_badjson'
+            New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
+            $cfg = Join-Path -Path $TestDrive -ChildPath 'cfg_bad.json'
+            Set-Content -LiteralPath $cfg -Value '{ this is not valid json' -Encoding UTF8
+
+            { & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId `
+                    -CertificateThumbprint $script:DefaultThumbprint -ConfigFile $cfg `
+                    -LogFolder $logFolder -Verbose:$false -WarningAction SilentlyContinue
+            } 6>&1 | Out-Null } | Should -Not -Throw
+        }
+    }
 }
 
 
