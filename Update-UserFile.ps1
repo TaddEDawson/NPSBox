@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.6
+    Version: 1.2.2.7
     Date:    2026-05-13
 
 .DESCRIPTION
@@ -896,6 +896,106 @@ begin
         } # finally
     } # function Connect-GraphCertAuth
 
+    # ── Invoke-OneDriveResumableUpload ───────────────────────────────────────────
+    # Uploads a single local file to OneDrive using a resumable upload session.
+    # Required for files larger than the 4 MB simple-upload limit.
+    #
+    # Flow:
+    #   1. POST .../createUploadSession         (returns a short-lived uploadUrl)
+    #   2. PUT  <uploadUrl>   for each chunk    (with Content-Range header)
+    #
+    # The uploadUrl is pre-authenticated, so chunk PUTs go through Invoke-WebRequest
+    # WITHOUT adding Graph auth headers (using Invoke-MgGraphRequest here would
+    # incorrectly add a bearer token).
+    # https://learn.microsoft.com/graph/api/driveitem-createuploadsession?view=graph-rest-1.0
+    function Invoke-OneDriveResumableUpload
+    {
+        [CmdletBinding()]
+        param
+        (
+            [Parameter(Mandatory = $true)]
+            [string] $DriveId
+            ,
+            [Parameter(Mandatory = $true)]
+            [string] $EncodedRelPath
+            ,
+            [Parameter(Mandatory = $true)]
+            [string] $LocalFilePath
+            ,
+            # Chunk size in bytes.  Microsoft Graph requires every chunk except the
+            # last to be a multiple of 320 KiB (327,680 bytes).  10 MiB (32 × 320 KiB)
+            # is the commonly recommended value.
+            [Parameter()]
+            [ValidateScript({ ($_ % 327680) -eq 0 })]
+            [int] $ChunkSizeBytes = (10 * 1024 * 1024)
+        )
+
+        $fileInfo  = Get-Item -LiteralPath $LocalFilePath -ErrorAction Stop
+        $totalBytes = [long]$fileInfo.Length
+        $fileName  = [System.IO.Path]::GetFileName($LocalFilePath)
+
+        # Step 1: create the upload session.
+        $createSessionUri = "https://graph.microsoft.com/v1.0/drives/$DriveId/root:/${EncodedRelPath}:/createUploadSession"
+        $sessionBody = @{
+            item = @{
+                '@microsoft.graph.conflictBehavior' = 'replace'
+                name                                = $fileName
+            }
+        } | ConvertTo-Json -Depth 4
+
+        $session = Invoke-WithGraphRetry -OperationName ("Create upload session for '{0}'" -f $EncodedRelPath) -Operation {
+            Invoke-MgGraphRequest -Method POST -Uri $createSessionUri -Body $sessionBody -ContentType 'application/json' -ErrorAction Stop
+        } # inline:Invoke-WithGraphRetry — createUploadSession
+
+        $uploadUrl = if ($session -is [System.Collections.IDictionary]) { $session['uploadUrl'] } else { $session.uploadUrl }
+        if ([string]::IsNullOrWhiteSpace($uploadUrl))
+        {
+            throw 'createUploadSession did not return an uploadUrl.'
+        } # if
+
+        # Step 2: stream the file in chunks to the pre-authenticated uploadUrl.
+        $stream = [System.IO.File]::OpenRead($LocalFilePath)
+        try
+        {
+            $buffer       = [byte[]]::new($ChunkSizeBytes)
+            $offset       = [long]0
+            $lastResponse = $null
+
+            while ($offset -lt $totalBytes)
+            {
+                $bytesToRead = [int][Math]::Min([long]$ChunkSizeBytes, $totalBytes - $offset)
+                $bytesRead   = $stream.Read($buffer, 0, $bytesToRead)
+                if ($bytesRead -le 0) { break }
+
+                if ($bytesRead -ne $buffer.Length)
+                {
+                    $chunk = [byte[]]::new($bytesRead)
+                    [Array]::Copy($buffer, 0, $chunk, 0, $bytesRead)
+                } # if
+                else
+                {
+                    $chunk = $buffer
+                } # else
+
+                $rangeEnd     = $offset + $bytesRead - 1
+                $contentRange = 'bytes {0}-{1}/{2}' -f $offset, $rangeEnd, $totalBytes
+                $headers      = @{ 'Content-Range' = $contentRange }
+
+                $lastResponse = Invoke-WithGraphRetry -OperationName ('Upload chunk {0}-{1}/{2}' -f $offset, $rangeEnd, $totalBytes) -Operation {
+                    Invoke-WebRequest -Method PUT -Uri $uploadUrl -Body $chunk -Headers $headers -ContentType 'application/octet-stream' -ErrorAction Stop
+                } # inline:Invoke-WithGraphRetry — chunk PUT
+
+                $offset += $bytesRead
+            } # while
+
+            return $lastResponse
+        } # try
+        finally
+        {
+            $stream.Dispose()
+        } # finally
+    } # function Invoke-OneDriveResumableUpload
+
     # ── Invoke-OneDriveUpload ─────────────────────────────────────────────────────
     # Uploads local files and folders to a user's OneDrive.
     # Folders are created first (parents before children) via PATCH with a folder
@@ -1035,23 +1135,30 @@ begin
 
             try
             {
-                # The simple upload endpoint supports files up to 4 MB.
-                # Larger files require a resumable upload session (not implemented).
+                # Files ≤ 4 MB use the simple upload endpoint; larger files use a
+                # resumable upload session (Invoke-OneDriveResumableUpload).
                 # https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0
+                # https://learn.microsoft.com/graph/api/driveitem-createuploadsession?view=graph-rest-1.0
                 $maxSimpleUploadBytes = 4 * 1024 * 1024  # 4 MB
-                if ($file.Length -gt $maxSimpleUploadBytes)
-                {
-                    throw ("File size {0:N0} bytes exceeds the 4 MB simple-upload limit. Use a resumable upload session for large files." -f $file.Length)
-                } # if
+                $useResumable = ($file.Length -gt $maxSimpleUploadBytes)
 
-                if ($PSCmdlet.ShouldProcess("OneDrive:/$relativePath ($($file.Length) bytes)", "Upload file"))
+                $shouldProcessTarget = "OneDrive:/$relativePath ($($file.Length) bytes)"
+                $shouldProcessAction = if ($useResumable) { 'Upload file (resumable)' } else { 'Upload file' }
+                if ($PSCmdlet.ShouldProcess($shouldProcessTarget, $shouldProcessAction))
                 {
-                    $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
-                    Invoke-WithGraphRetry -OperationName ("Upload file '{0}'" -f $relativePath) -Operation {
-                        Invoke-MgGraphRequest -Method PUT -Uri $uploadUri -Body $fileBytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
-                    } # inline:Invoke-WithGraphRetry -OperationName ("U
+                    if ($useResumable)
+                    {
+                        Invoke-OneDriveResumableUpload -DriveId $DriveId -EncodedRelPath $encodedRelPath -LocalFilePath $file.FullName | Out-Null
+                    } # if
+                    else
+                    {
+                        $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                        Invoke-WithGraphRetry -OperationName ("Upload file '{0}'" -f $relativePath) -Operation {
+                            Invoke-MgGraphRequest -Method PUT -Uri $uploadUri -Body $fileBytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
+                        } # inline:Invoke-WithGraphRetry — simple upload PUT
+                    } # else
                     $result.Status = 'Applied'
-                    Write-LogLine -Message ("Uploaded file: OneDrive:/{0} ({1} bytes)" -f $relativePath, $file.Length)
+                    Write-LogLine -Message ("Uploaded file ({0}): OneDrive:/{1} ({2} bytes)" -f ($useResumable ? 'resumable' : 'simple'), $relativePath, $file.Length)
                 } # if
                 else
                 {

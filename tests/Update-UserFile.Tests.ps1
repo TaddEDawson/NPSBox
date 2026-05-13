@@ -892,15 +892,35 @@ Describe 'Update-UserFile.ps1' {
             $uploadResults | Should -BeNullOrEmpty
         }
 
-        It 'should fail upload for files exceeding 4 MB' {
-            # Create a file larger than 4 MB
+        It 'should upload files exceeding 4 MB via a resumable upload session' {
+            # Create a file larger than 4 MB; the script must switch to the
+            # resumable upload path (createUploadSession + chunked PUTs).
             $largeFolderRoot = Join-Path -Path $TestDrive -ChildPath 'LargeLocalFiles'
             $largeUserPath = Join-Path -Path $largeFolderRoot -ChildPath $script:DefaultOwner
             New-Item -Path $largeUserPath -ItemType Directory -Force | Out-Null
             $largeFile = Join-Path -Path $largeUserPath -ChildPath 'BigFile.bin'
-            # Create a 5 MB file (exceeds 4 MB limit)
-            $bytes = [byte[]]::new(5 * 1024 * 1024)
+            $bytes = [byte[]]::new(5 * 1024 * 1024)   # 5 MB
             [System.IO.File]::WriteAllBytes($largeFile, $bytes)
+
+            # createUploadSession returns a fake uploadUrl; the simple-upload PUT
+            # should NOT be invoked for this file.
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/createUploadSession' -and $Method -eq 'POST') {
+                    return @{ uploadUrl = 'https://upload.example/test-session'; expirationDateTime = (Get-Date).AddHours(1) }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
+            }
+            Mock -CommandName 'Invoke-WebRequest' -MockWith {
+                # Simulate a successful chunk PUT response.
+                [PSCustomObject]@{ StatusCode = 202; Content = '{}' }
+            }
 
             $results = & {
                 . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
@@ -908,10 +928,75 @@ Describe 'Update-UserFile.ps1' {
                     -AllFilesDirectory $largeFolderRoot -UploadFiles -Verbose:$false
             } 6>&1
 
-            $uploadResults = $results | Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' }
-            $failedUpload = $uploadResults | Where-Object { $_.Status -eq 'Failed' }
-            $failedUpload | Should -Not -BeNullOrEmpty
-            $failedUpload.Error | Should -Match '4 MB'
+            $bigResult = $results |
+                Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' -and $_.LocalPath -eq $largeFile }
+            $bigResult         | Should -Not -BeNullOrEmpty
+            $bigResult.Status  | Should -Be 'Applied'
+            $bigResult.Error   | Should -BeNullOrEmpty
+            Should -Invoke -CommandName 'Invoke-MgGraphRequest' -ParameterFilter { $Uri -match '/createUploadSession' } -Times 1
+            Should -Invoke -CommandName 'Invoke-WebRequest' -Times 1
+        }
+
+        It 'should chunk a large resumable upload at the configured chunk size' {
+            # Create a 12 MiB file so that with a 10 MiB chunk we get exactly 2 chunks.
+            $largeFolderRoot = Join-Path -Path $TestDrive -ChildPath 'ChunkedLocalFiles'
+            $largeUserPath = Join-Path -Path $largeFolderRoot -ChildPath $script:DefaultOwner
+            New-Item -Path $largeUserPath -ItemType Directory -Force | Out-Null
+            $largeFile = Join-Path -Path $largeUserPath -ChildPath 'TwoChunk.bin'
+            $bytes = [byte[]]::new(12 * 1024 * 1024)
+            [System.IO.File]::WriteAllBytes($largeFile, $bytes)
+
+            $script:CapturedRanges = New-Object 'System.Collections.Generic.List[string]'
+            Mock -CommandName 'Invoke-MgGraphRequest' -MockWith {
+                param($Method, $Uri)
+                if ($Uri -match '/createUploadSession' -and $Method -eq 'POST') {
+                    return @{ uploadUrl = 'https://upload.example/two-chunk'; expirationDateTime = (Get-Date).AddHours(1) }
+                }
+                elseif ($Uri -match '/invite' -and $Method -eq 'POST') {
+                    return [PSCustomObject]@{ value = @(@{ id = 'perm-id'; roles = @('write') }) }
+                }
+                elseif ($Uri -match '/root') {
+                    return [PSCustomObject]@{ id = 'root-id'; webUrl = $script:DefaultWebUrl }
+                }
+                return [PSCustomObject]@{ id = 'item-id'; name = 'Item' }
+            }
+            Mock -CommandName 'Invoke-WebRequest' -MockWith {
+                param($Method, $Uri, $Body, $Headers, $ContentType)
+                if ($Headers -and $Headers.ContainsKey('Content-Range')) {
+                    $script:CapturedRanges.Add([string]$Headers['Content-Range'])
+                }
+                [PSCustomObject]@{ StatusCode = 202; Content = '{}' }
+            }
+
+            $results = & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $largeFolderRoot -UploadFiles -Verbose:$false
+            } 6>&1
+
+            $bigResult = $results |
+                Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' -and $_.LocalPath -eq $largeFile }
+            $bigResult.Status | Should -Be 'Applied'
+            $script:CapturedRanges.Count | Should -Be 2
+            # First chunk = 0..(10 MiB - 1), second chunk = 10 MiB..(12 MiB - 1).
+            $totalBytes = 12 * 1024 * 1024
+            $firstEnd   = (10 * 1024 * 1024) - 1
+            $script:CapturedRanges[0] | Should -Be ("bytes 0-{0}/{1}" -f $firstEnd, $totalBytes)
+            $script:CapturedRanges[1] | Should -Be ("bytes {0}-{1}/{2}" -f ($firstEnd + 1), ($totalBytes - 1), $totalBytes)
+        }
+
+        It 'should keep small files on the simple upload path (no upload session)' {
+            # The default fixture uses small text files; verify no createUploadSession call.
+            Mock -CommandName 'Invoke-WebRequest' -MockWith { [PSCustomObject]@{ StatusCode = 202 } }
+
+            & {
+                . $script:ScriptUnderTest -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                    -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder `
+                    -AllFilesDirectory $script:LocalFilesRoot -UploadFiles -Verbose:$false
+            } 6>&1 | Out-Null
+
+            Should -Invoke -CommandName 'Invoke-MgGraphRequest' -ParameterFilter { $Uri -match '/createUploadSession' } -Times 0 -Exactly
+            Should -Invoke -CommandName 'Invoke-WebRequest' -Times 0 -Exactly
         }
     }
 

@@ -17,7 +17,7 @@ The project originally used `PnP.PowerShell` to resolve OneDrive items via Share
 | **Item resolution** | Resolved items via SharePoint list item IDs, which is sensitive to SharePoint URL encoding rules (`#`, `%`, `&`). Deep nested paths were fragile. | Resolves items by OneDrive path via [`driveItem: get`](https://learn.microsoft.com/graph/api/driveitem-get?view=graph-rest-1.0#access-a-driveitem-by-path). Handles special characters via per-segment URL encoding. |
 | **Permission model** | Mapped Box roles → SharePoint role definitions (`Contribute`, `Read`). Required site collection admin access and user profile property lookups. | Maps Box roles → Graph sharing roles (`write`, `read`). Uses the [`driveItem: invite`](https://learn.microsoft.com/graph/api/driveitem-invite?view=graph-rest-1.0) API with app-only permissions. |
 | **Authentication** | Multiple auth modes (`Interactive`, `ManagedIdentity`, `Certificate`, etc.) added complexity. Required SPO admin URL and MySite host URL parameters. | Certificate-based app-only auth via [`Connect-MgGraph`](https://learn.microsoft.com/powershell/module/microsoft.graph.authentication/connect-mggraph). Three parameters: `TenantId`, `ClientId`, `CertificateThumbprint`. |
-| **File upload** | Not supported — permissions only. | Supports uploading local files to OneDrive via the [simple upload API](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0) (≤ 4 MB). |
+| **File upload** | Not supported — permissions only. | Uploads local files to OneDrive. Files ≤ 4 MB use the [simple upload API](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0); larger files use a chunked [resumable upload session](https://learn.microsoft.com/graph/api/driveitem-createuploadsession?view=graph-rest-1.0). |
 | **Retry / throttling** | No built-in retry. PnP cmdlets surfaced raw 429 errors. | `Invoke-WithGraphRetry` with exponential backoff, `Retry-After` header parsing, and configurable max attempts. |
 | **Testability** | CSOM calls were difficult to mock in Pester. | All Graph calls go through `Invoke-MgGraphRequest`, which is straightforward to mock. Full Pester 5 test suite (87 tests for `Update-UserFile.ps1`). |
 
@@ -315,8 +315,13 @@ $params = @{
 When `-UploadFiles` is specified, the script uploads local files from `<AllFilesDirectory>\<UserToProcess>\` to the user's OneDrive root before applying permissions.
 
 - Folders are created first (parent before child, sorted by path depth) via `POST /drives/{driveId}/root:/{parent}:/children` (or `/root/children` at the root) using the [documented `driveItem: post children` API](https://learn.microsoft.com/graph/api/driveitem-post-children?view=graph-rest-1.0) with `@microsoft.graph.conflictBehavior = fail`. A `409 nameAlreadyExists` response is treated as success so reruns are safe.
-- Files are uploaded via `PUT /drives/{driveId}/root:/{path}:/content` ([simple upload API](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0)).
-- Files larger than 4 MB are rejected with a clear error message. A [resumable upload session](https://learn.microsoft.com/graph/api/driveitem-createuploadsession?view=graph-rest-1.0) would be required for larger files (not implemented).
+- **Small files (≤ 4 MB)** are uploaded via `PUT /drives/{driveId}/root:/{path}:/content` ([simple upload API](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0)).
+- **Large files (&gt; 4 MB)** are uploaded via a [resumable upload session](https://learn.microsoft.com/graph/api/driveitem-createuploadsession?view=graph-rest-1.0):
+  1. `POST .../createUploadSession` returns a short-lived, pre-authenticated `uploadUrl`.
+  2. The file is streamed to that URL in 10 MiB chunks (a multiple of the required 320 KiB block size) with `Content-Range: bytes <start>-<end>/<total>` headers.
+  3. Chunk PUTs use `Invoke-WebRequest` (not `Invoke-MgGraphRequest`) so they do **not** add a Graph bearer token to the pre-authenticated upload URL.
+  4. Each chunk goes through the same `Invoke-WithGraphRetry` exponential-backoff path used for other Graph calls.
+- `@microsoft.graph.conflictBehavior` is set to `replace` on the upload session so reruns overwrite the existing file.
 - Use `-WhatIf` to preview what would be uploaded without making changes.
 
 **Directory structure example:**
@@ -375,7 +380,7 @@ See [Microsoft Graph throttling guidance](https://learn.microsoft.com/graph/thro
 
 ### Known limitations
 
-- **Simple upload only:** Files larger than 4 MB require a resumable upload session, which is not implemented. The script throws a clear error rather than silently truncating.
+- **Simple vs. resumable upload:** Files ≤ 4 MB use the single-request `PUT /content` endpoint; larger files automatically switch to a resumable upload session (10 MiB chunks). The chunk size is hard-coded at the moment — expose it as a parameter if you need to tune it for very slow or unreliable links.
 - **Path translation:** Box paths prefixed with `All Files/` are stripped automatically (case-insensitive). If your migration tool renamed items or altered folder hierarchy, paths may not resolve correctly.
 - **Box path encoding:** Special characters (spaces, parentheses, etc.) are URL-encoded per segment for the Graph API. Highly unusual characters may still cause issues.
 - **Unmapped roles:** Permissions with no Graph equivalent (`Previewer`, `Uploader`, `Previewer Uploader`) and any unrecognized role string are skipped with a log entry.
