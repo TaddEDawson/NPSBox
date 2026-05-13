@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.10
+    Version: 1.2.2.12
     Date:    2026-05-13
 
 .DESCRIPTION
@@ -53,10 +53,10 @@
         https://learn.microsoft.com/powershell/microsoftgraph/installation
       - An Azure AD App Registration with the following APPLICATION permissions
         granted with admin consent:
-          Files.ReadWrite.All   — Read/write all users' OneDrive files, upload
+          Files.ReadWrite.All   - Read/write all users' OneDrive files, upload
                                    content, and grant sharing permissions via the
                                    driveItem: invite API.
-          User.Read.All         — Look up user accounts (Get-MgUser) to validate
+          User.Read.All         - Look up user accounts (Get-MgUser) to validate
                                    that owner and collaborator UPNs exist and are
                                    enabled before attempting drive operations.
         https://learn.microsoft.com/graph/permissions-reference
@@ -79,7 +79,7 @@
       2. Values from this JSON file (when the file exists and the key is set).
       3. Environment variables (NPSBOX_TENANT_ID, NPSBOX_CLIENT_ID,
          NPSBOX_CERT_THUMBPRINT) or hard-coded defaults.
-    Missing file is not an error — the script falls back to env vars/defaults.
+    Missing file is not an error - the script falls back to env vars/defaults.
     https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/convertfrom-json
 
 .PARAMETER InputFile
@@ -127,7 +127,7 @@
     Used together with the -UploadFiles switch.
 
 .PARAMETER UploadFiles
-    Switch parameter (no value needed — just include it or omit it).
+    Switch parameter (no value needed - just include it or omit it).
     When present, uploads files and folders from AllFilesDirectory\<UserToProcess>
     to the user's OneDrive root before applying permissions.
     Combine with -WhatIf to preview what would be uploaded.
@@ -197,7 +197,6 @@ param
     # Alias allows matching CSV column names directly for pipeline binding.
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_parameters#alias-attribute
     [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Run')]
-    [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Test')]
     [Alias('Owner Login', 'User', 'UPN', 'Account')]
     [string] $UserToProcess
     ,
@@ -233,7 +232,7 @@ param
     [string] $AllFilesDirectory = "C:\Repos\NPSBox\LocalFiles"
     ,
     # Include this switch to upload local files to OneDrive before applying permissions.
-    # A switch parameter is either present ($true) or absent ($false) — no value needed.
+    # A switch parameter is either present ($true) or absent ($false) - no value needed.
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_switch
     [Parameter(ParameterSetName = 'Run')]
     [switch] $UploadFiles
@@ -253,15 +252,15 @@ param
     [switch] $Test
 )
 
-# ╔═══════════════════════════════════════════════════════════════════════════════╗
-# ║  BEGIN BLOCK                                                                 ║
-# ║  Runs once before any pipeline input is processed.                           ║
-# ║  Used here to define helper functions, import modules, and authenticate.     ║
-# ║  https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_methods ║
-# ╚═══════════════════════════════════════════════════════════════════════════════╝
+# #===============================================================================#
+# #  BEGIN BLOCK                                                                 #
+# #  Runs once before any pipeline input is processed.                           #
+# #  Used here to define helper functions, import modules, and authenticate.     #
+# #  https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_methods #
+# #===============================================================================#
 begin
 {
-    # ── Help mode: show help and exit when no parameters are provided ────────
+    # -- Help mode: show help and exit when no parameters are provided --------
     # DefaultParameterSetName = 'Help' activates when no params are supplied.
     # Display the about_help topic and return immediately.
     $script:HelpModeActive = $false
@@ -279,9 +278,9 @@ begin
         } # else
         $script:HelpModeActive = $true
         return
-    } # if — Help mode
+    } # if - Help mode
 
-    # ── Load defaults from ConfigFile ────────────────────────────────────────────
+    # -- Load defaults from ConfigFile --------------------------------------------
     # Apply values from the JSON config to any parameter the caller did NOT
     # explicitly bind.  This lets users keep tenant/cert/path settings in a
     # config.json beside the script instead of passing them every invocation.
@@ -312,20 +311,20 @@ begin
                 if ($null -eq $value -or ($value -is [string] -and [string]::IsNullOrWhiteSpace($value))) { continue }
                 Set-Variable -Name $configMap[$key] -Value $value -Scope 0
                 Write-Verbose ("Config override: {0} = {1}" -f $key, $value)
-            } # foreach — config key
+            } # foreach - config key
         } # try
         catch
         {
             Write-Warning ("Failed to read ConfigFile '{0}': {1}" -f $ConfigFile, $_.Exception.Message)
         } # catch
-    } # if — ConfigFile exists
+    } # if - ConfigFile exists
     else
     {
         Write-Verbose ("ConfigFile not found or not specified: {0}" -f $ConfigFile)
     } # else
 
-    # ── Validate required credentials (post-config) ────────────────────────────────────
-    # Validation runs here — after config merge — so config.json can supply
+    # -- Validate required credentials (post-config) ------------------------------------
+    # Validation runs here - after config merge - so config.json can supply
     # credentials when neither the caller nor env vars provide them.
     $missingCreds = @()
     if ([string]::IsNullOrWhiteSpace($TenantId))              { $missingCreds += 'TenantId' }
@@ -336,7 +335,7 @@ begin
         throw ("Missing required credential value(s): {0}. Supply via parameter, -ConfigFile (config.json), or env vars NPSBOX_TENANT_ID/NPSBOX_CLIENT_ID/NPSBOX_CERT_THUMBPRINT." -f ($missingCreds -join ', '))
     } # if
 
-    # ── Write-LogLine ────────────────────────────────────────────────────────────
+    # -- Write-LogLine ------------------------------------------------------------
     # Writes a timestamped message to both the Verbose stream and a log file.
     # Write-Verbose sends output to the verbose stream (visible only with -Verbose).
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/write-verbose
@@ -380,7 +379,7 @@ begin
                 finally
                 {
                     $WhatIfPreference = $previousWhatIfPreference
-                } # finally — always restores the original $WhatIfPreference
+                } # finally - always restores the original $WhatIfPreference
             } # try
             catch
             {
@@ -390,7 +389,7 @@ begin
         } # if
     } # function Write-LogLine
 
-    # ── Assert-RequiredModules ───────────────────────────────────────────────────
+    # -- Assert-RequiredModules ---------------------------------------------------
     # Ensures the Microsoft Graph PowerShell SDK modules are installed and imports them.
     # Modules are reusable packages of PowerShell commands.  The Graph SDK is split
     # into sub-modules (Authentication, Users, Files, etc.) to keep imports small.
@@ -437,11 +436,11 @@ begin
         } # foreach
     } # function Assert-RequiredModules
 
-    # ── ConvertTo-GraphRole ──────────────────────────────────────────────────────
+    # -- ConvertTo-GraphRole ------------------------------------------------------
     # Maps a Box permission name to a Microsoft Graph sharing role.
     # Graph supports two sharing roles for the invite API:
-    #   'read'   — view-only access
-    #   'write'  — view + edit access
+    #   'read'   - view-only access
+    #   'write'  - view + edit access
     # Box has more granular roles; some (Previewer, Uploader) have no equivalent
     # in Graph so they return $null and the row is skipped.
     # https://learn.microsoft.com/graph/api/resources/permission?view=graph-rest-1.0#roles-property-values
@@ -462,14 +461,14 @@ begin
             'Editor'             { return 'write' }   # Edit access
             'Viewer Uploader'    { return 'read'  }   # Read-only (upload aspect not supported)
             'Viewer'             { return 'read'  }   # Read-only
-            'Previewer Uploader' { return $null   }   # No Graph equivalent — skip
-            'Previewer'          { return $null   }   # No Graph equivalent — skip
-            'Uploader'           { return $null   }   # No Graph equivalent — skip
-            default              { return $null   }   # Unknown — skip
+            'Previewer Uploader' { return $null   }   # No Graph equivalent - skip
+            'Previewer'          { return $null   }   # No Graph equivalent - skip
+            'Uploader'           { return $null   }   # No Graph equivalent - skip
+            default              { return $null   }   # Unknown - skip
         } # switch
     } # function ConvertTo-GraphRole
 
-    # ── Test-CollaboratorDomain ────────────────────────────────────────────────────
+    # -- Test-CollaboratorDomain ----------------------------------------------------
     # Validates that a collaborator's email domain is in the AllowedDomains list.
     # Returns $true if the domain is allowed (or if AllowedDomains is not set).
     # Returns $false if the domain is blocked.
@@ -504,7 +503,7 @@ begin
         return ($emailDomain -in $lowerDomains)
     } # function Test-CollaboratorDomain
 
-    # ── Test-EmailFormat ────────────────────────────────────────────────────────
+    # -- Test-EmailFormat --------------------------------------------------------
     # Validates that a string is a plausible email address.
     # Uses a basic regex: local-part @ domain with at least one dot.
     # Not a full RFC 5322 implementation, but catches obvious non-email values
@@ -522,7 +521,7 @@ begin
         return ($Email -match '^[^@\s]+@[^@\s]+\.[^@\s]+$')
     } # function Test-EmailFormat
 
-    # ── Assert-CsvColumns ─────────────────────────────────────────────────────────
+    # -- Assert-CsvColumns ---------------------------------------------------------
     # Validates that the CSV contains all required column headers.
     # Throws with a clear message listing any missing columns.
     # This prevents null-reference errors deep in the processing loop.
@@ -539,7 +538,7 @@ begin
         $firstRow = $CsvRows | Select-Object -First 1
         if ($null -eq $firstRow)
         {
-            throw 'CSV file is empty — no rows to process.'
+            throw 'CSV file is empty - no rows to process.'
         } # if
 
         $actualColumns = @($firstRow.PSObject.Properties.Name)
@@ -554,7 +553,7 @@ begin
         } # if
     } # function Assert-CsvColumns
 
-    # ── ConvertTo-OneDriveRelativePath ────────────────────────────────────────────
+    # -- ConvertTo-OneDriveRelativePath --------------------------------------------
     # Cleans up the Box export path so it can be used with the Graph API.
     # Box exports include a root label "All Files/" which does not exist in OneDrive.
     # This function strips that prefix, normalizes backslashes to forward slashes,
@@ -598,7 +597,7 @@ begin
         return $normalized
     } # function ConvertTo-OneDriveRelativePath
 
-    # ── ConvertTo-GraphEncodedPath ────────────────────────────────────────────────
+    # -- ConvertTo-GraphEncodedPath ------------------------------------------------
     # URL-encodes each segment of a relative path so special characters (spaces,
     # parentheses, etc.) are safe to use in Graph API URLs.
     #
@@ -638,7 +637,7 @@ begin
         return ($encodedSegments -join '/')
     } # function ConvertTo-GraphEncodedPath
 
-    # ── Test-IsRetryableGraphError ────────────────────────────────────────────────
+    # -- Test-IsRetryableGraphError ------------------------------------------------
     # Determines whether a Graph API error is transient and worth retrying.
     # Transient errors include:
     #   - HTTP 429 (Too Many Requests / throttling)
@@ -667,7 +666,7 @@ begin
         )
     } # function Test-IsRetryableGraphError
 
-    # ── Get-RetryAfterSeconds ───────────────────────────────────────────────────
+    # -- Get-RetryAfterSeconds ---------------------------------------------------
     # Parses the Retry-After value from a Graph API error response.
     # Graph 429 responses include a Retry-After header (in seconds) that tells
     # the client exactly how long to wait before retrying.
@@ -728,7 +727,7 @@ begin
         return $null
     } # function Get-RetryAfterSeconds
 
-    # ── Invoke-WithGraphRetry ────────────────────────────────────────────────────
+    # -- Invoke-WithGraphRetry ----------------------------------------------------
     # Wraps a Graph API call with automatic retry and exponential backoff.
     # If the call fails with a transient error (timeout, 429, 5xx), it waits and
     # retries up to MaxAttempts times.  The wait doubles each time (exponential
@@ -803,10 +802,10 @@ begin
         } # while
     } # function Invoke-WithGraphRetry
 
-    # ── Connect-GraphCertAuth ─────────────────────────────────────────────────────
+    # -- Connect-GraphCertAuth -----------------------------------------------------
     # Authenticates to Microsoft Graph using certificate-based app-only auth.
     #
-    # Certificate mode uses a certificate for "app-only" auth — no user sign-in
+    # Certificate mode uses a certificate for "app-only" auth - no user sign-in
     # is required.  This is how you run the script unattended (e.g. scheduled).
     # The app registration must have Application permissions granted with admin consent.
     #
@@ -858,7 +857,7 @@ begin
             Write-LogLine -Message ("Connecting to Microsoft Graph using Certificate thumbprint auth. TenantId={0}, ClientId={1}" -f $TenantId, $ClientId)
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -ErrorAction Stop -NoWelcome | Out-Null
 
-            # ── Post-connection validation ────────────────────────────────────
+            # -- Post-connection validation ------------------------------------
             # Verify the resulting session is actually app-only and uses the
             # expected ClientId.  If Connect-MgGraph silently fell back to
             # delegated auth (e.g. certificate not found), the session will
@@ -896,7 +895,7 @@ begin
         } # finally
     } # function Connect-GraphCertAuth
 
-    # ── Invoke-OneDriveResumableUpload ───────────────────────────────────────────
+    # -- Invoke-OneDriveResumableUpload -------------------------------------------
     # Uploads a single local file to OneDrive using a resumable upload session.
     # Required for files larger than the 4 MB simple-upload limit.
     #
@@ -923,7 +922,7 @@ begin
             [string] $LocalFilePath
             ,
             # Chunk size in bytes.  Microsoft Graph requires every chunk except the
-            # last to be a multiple of 320 KiB (327,680 bytes).  10 MiB (32 × 320 KiB)
+            # last to be a multiple of 320 KiB (327,680 bytes).  10 MiB (32 x 320 KiB)
             # is the commonly recommended value.
             [Parameter()]
             [ValidateScript({ ($_ % 327680) -eq 0 })]
@@ -945,7 +944,7 @@ begin
 
         $session = Invoke-WithGraphRetry -OperationName ("Create upload session for '{0}'" -f $EncodedRelPath) -Operation {
             Invoke-MgGraphRequest -Method POST -Uri $createSessionUri -Body $sessionBody -ContentType 'application/json' -ErrorAction Stop
-        } # inline:Invoke-WithGraphRetry — createUploadSession
+        } # inline:Invoke-WithGraphRetry - createUploadSession
 
         $uploadUrl = if ($session -is [System.Collections.IDictionary]) { $session['uploadUrl'] } else { $session.uploadUrl }
         if ([string]::IsNullOrWhiteSpace($uploadUrl))
@@ -983,7 +982,7 @@ begin
 
                 $lastResponse = Invoke-WithGraphRetry -OperationName ('Upload chunk {0}-{1}/{2}' -f $offset, $rangeEnd, $totalBytes) -Operation {
                     Invoke-WebRequest -Method PUT -Uri $uploadUrl -Body $chunk -Headers $headers -ContentType 'application/octet-stream' -ErrorAction Stop
-                } # inline:Invoke-WithGraphRetry — chunk PUT
+                } # inline:Invoke-WithGraphRetry - chunk PUT
 
                 $offset += $bytesRead
             } # while
@@ -996,7 +995,7 @@ begin
         } # finally
     } # function Invoke-OneDriveResumableUpload
 
-    # ── Invoke-OneDriveUpload ─────────────────────────────────────────────────────
+    # -- Invoke-OneDriveUpload -----------------------------------------------------
     # Uploads local files and folders to a user's OneDrive.
     # Folders are created first (parents before children) via PATCH with a folder
     # body, and files are uploaded via PUT /content.
@@ -1086,7 +1085,7 @@ begin
                     } # try
                     catch
                     {
-                        # 409 Conflict means the folder already exists — safe to continue.
+                        # 409 Conflict means the folder already exists - safe to continue.
                         if ($_.Exception.Message -match '409|nameAlreadyExists|conflict')
                         {
                             Write-LogLine -Message ("Folder already exists (409): OneDrive:/{0}" -f $relativePath)
@@ -1095,7 +1094,7 @@ begin
                         {
                             throw
                         } # else
-                    } # catch — 409 handling
+                    } # catch - 409 handling
                     $result.Status = 'Applied'
                     Write-LogLine -Message ("Created folder: OneDrive:/{0}" -f $relativePath)
                 } # if
@@ -1137,7 +1136,7 @@ begin
 
             try
             {
-                # Files ≤ 4 MB use the simple upload endpoint; larger files use a
+                # Files <= 4 MB use the simple upload endpoint; larger files use a
                 # resumable upload session (Invoke-OneDriveResumableUpload).
                 # https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0
                 # https://learn.microsoft.com/graph/api/driveitem-createuploadsession?view=graph-rest-1.0
@@ -1160,7 +1159,7 @@ begin
                             $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
                             Invoke-WithGraphRetry -OperationName ("Upload file '{0}'" -f $relativePath) -Operation {
                                 Invoke-MgGraphRequest -Method PUT -Uri $uploadUri -Body $fileBytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
-                            } # inline:Invoke-WithGraphRetry — simple upload PUT
+                            } # inline:Invoke-WithGraphRetry - simple upload PUT
                         } # else
                     } # try
                     finally
@@ -1190,7 +1189,7 @@ begin
         } # foreach
     } # function Invoke-OneDriveUpload
 
-    # ── Assert-GraphAssemblyCompatibility ──────────────────────────────────────────
+    # -- Assert-GraphAssemblyCompatibility ------------------------------------------
     # Checks for a known conflict:  PnP.PowerShell loads an older version of
     # Microsoft.Graph.Core (1.x) which is incompatible with the Graph SDK v2 (3.x).
     # If both are loaded in the same session, Graph calls will fail with cryptic errors.
@@ -1226,7 +1225,7 @@ begin
         } # if
     } # function Assert-GraphAssemblyCompatibility
 
-    # ── Assert-GraphPermissions ─────────────────────────────────────────────────
+    # -- Assert-GraphPermissions -------------------------------------------------
     # Verifies that the app registration has the required Microsoft Graph
     # application permissions (admin-consented).  Throws if any are missing.
     # Reuses the same logic as Test-AzureAppRegistration.ps1.
@@ -1320,10 +1319,10 @@ begin
         return 'Verified'
     } # function Assert-GraphPermissions
 
-    # ── Get-AppPermissionDetail ──────────────────────────────────────────────────
+    # -- Get-AppPermissionDetail --------------------------------------------------
     # Resolves the app's service principal in the tenant and checks each required
     # Graph application permission individually.  Returns an array of result objects
-    # with per-permission grant status — the same detail as Test-AzureAppRegistration.ps1.
+    # with per-permission grant status - the same detail as Test-AzureAppRegistration.ps1.
     #
     # Used by -Test mode to provide granular permission reporting.
     # https://learn.microsoft.com/graph/api/serviceprincipal-list-approleassignments
@@ -1389,7 +1388,7 @@ begin
         return $results
     } # function Get-AppPermissionDetail
 
-    # ── Get-ValidatedUserDrive ────────────────────────────────────────────────────
+    # -- Get-ValidatedUserDrive ----------------------------------------------------
     # Looks up a user's OneDrive drive via Microsoft Graph, validates the response,
     # and confirms the drive root is accessible.  Returns a custom object with the
     # drive info plus account/provisioning status flags.
@@ -1415,7 +1414,7 @@ begin
             [string] $UserPrincipalName
         )
 
-        # ── Step 1: Validate the user account ────────────────────────────────
+        # -- Step 1: Validate the user account --------------------------------
         # https://learn.microsoft.com/powershell/module/microsoft.graph.users/get-mguser
         Write-LogLine -Message ("Validating user account: {0}" -f $UserPrincipalName)
         $userAccount = $null
@@ -1461,7 +1460,7 @@ begin
         Write-LogLine -Message ("User account validated: {0} (DisplayName='{1}', Enabled={2})" -f
             $UserPrincipalName, $userAccount.DisplayName, $userAccount.AccountEnabled)
 
-        # ── Step 2: Resolve the user's OneDrive drive ────────────────────────
+        # -- Step 2: Resolve the user's OneDrive drive ------------------------
         # Get-MgUserDrive can return multiple drives (e.g. OneDrive and
         # PersonalCacheLibrary).  We fetch all drives and filter to the one
         # named 'OneDrive' so we always target the correct drive.
@@ -1540,7 +1539,7 @@ begin
             )
         } # if
 
-        # ── Step 3: Validate the drive root is accessible ────────────────────
+        # -- Step 3: Validate the drive root is accessible --------------------
         $rootCheckUri = "https://graph.microsoft.com/v1.0/drives/$($userDrive.Id)/root?`$select=id,webUrl"
         $driveRoot = Invoke-WithGraphRetry -OperationName ("Resolve drive root for '{0}'" -f $UserPrincipalName) -Operation {
             Invoke-MgGraphRequest -Method GET -Uri $rootCheckUri -ErrorAction Stop
@@ -1556,7 +1555,7 @@ begin
         return $userDrive
     } # function Get-ValidatedUserDrive
 
-    # ── Initialization (runs once at script start) ───────────────────────────────
+    # -- Initialization (runs once at script start) -------------------------------
     # Set up logging, check for assembly conflicts, import modules, and authenticate.
     # $script: scope means the variable is visible across begin/process/end blocks.
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_scopes
@@ -1579,7 +1578,7 @@ begin
         Write-Warning "Logging setup failed: $($_.Exception.Message)"
     } # catch
 
-    # ── Run validation steps, collecting per-step results for -Test mode ────
+    # -- Run validation steps, collecting per-step results for -Test mode ----
     # Each step is tracked with a status (Passed / Failed / Skipped) so that
     # -Test can emit granular output showing exactly what was checked.
     # In normal (non-Test) mode, failures still throw as before.
@@ -1668,7 +1667,7 @@ begin
         } # catch
     } # if
 
-    # ── Test mode: verify auth and access, then exit ─────────────────────────
+    # -- Test mode: verify auth and access, then exit -------------------------
     # When -Test is specified, the script validates that authentication and
     # permissions are in order but does not process any CSV data.
     if ($Test)
@@ -1693,20 +1692,20 @@ begin
     } # if
 } # begin
 
-# ╔═══════════════════════════════════════════════════════════════════════════════╗
-# ║  PROCESS BLOCK                                                               ║
-# ║  Runs once for each pipeline input object ($UserToProcess).                  ║
-# ║  If not piped and $UserToProcess is empty, processes all unique owners       ║
-# ║  found in the CSV.                                                           ║
-# ║  This is where the main work happens: read CSV, upload files, grant perms.   ║
-# ║  https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_methods ║
-# ╚═══════════════════════════════════════════════════════════════════════════════╝
+# #===============================================================================#
+# #  PROCESS BLOCK                                                               #
+# #  Runs once for each pipeline input object ($UserToProcess).                  #
+# #  If not piped and $UserToProcess is empty, processes all unique owners       #
+# #  found in the CSV.                                                           #
+# #  This is where the main work happens: read CSV, upload files, grant perms.   #
+# #  https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_functions_advanced_methods #
+# #===============================================================================#
 process
 {
-    # ── Help mode: skip all processing ────────────────────────────────────────
+    # -- Help mode: skip all processing ----------------------------------------
     if ($script:HelpModeActive) { return }
 
-    # ── Test mode: skip all CSV processing ────────────────────────────────────
+    # -- Test mode: skip all CSV processing ------------------------------------
     if ($script:TestModeActive)
     {
         # Determine the overall status from the per-step results.
@@ -1722,7 +1721,7 @@ process
                 Status = $stepResult.Status
                 Detail = $stepResult.Detail
             }
-        } # foreach — step result
+        } # foreach - step result
 
         # Emit per-permission detail (same data as Test-AzureAppRegistration.ps1).
         if ($null -ne $script:PermissionDetails)
@@ -1730,7 +1729,7 @@ process
             foreach ($perm in $script:PermissionDetails)
             {
                 $perm
-            } # foreach — permission detail
+            } # foreach - permission detail
         } # if
 
         [pscustomobject]@{
@@ -1766,7 +1765,7 @@ process
     } # if
 
     # Get unique owner UPNs from the CSV rows.
-    # Group-Object builds a hashtable in a single pass — O(n) instead of O(n²)
+    # Group-Object builds a hashtable in a single pass - O(n) instead of O(n^2)
     # from repeated Where-Object calls per owner.
     # https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/group-object
     $ownerGroups = $allRows |
@@ -1782,10 +1781,10 @@ process
 
     Write-LogLine -Message ("Processing {0} unique owner(s): {1}" -f $uniqueOwners.Count, ($uniqueOwners -join ', '))
 
-    # ── Iterate over each unique owner ───────────────────────────────────────
+    # -- Iterate over each unique owner ---------------------------------------
     foreach ($ownerUpn in $uniqueOwners)
     {
-        Write-LogLine -Message ("── Begin processing owner: {0} ──" -f $ownerUpn)
+        Write-LogLine -Message ("-- Begin processing owner: {0} --" -f $ownerUpn)
 
         # Retrieve pre-grouped rows for this owner and deduplicate.
         # Duplicate rows (same Owner + Path + Item Name + Collaborator Login)
@@ -1840,7 +1839,7 @@ process
             continue
         } # catch
 
-        # ── Upload local files if -UploadFiles is specified ──────────────────────
+        # -- Upload local files if -UploadFiles is specified ----------------------
         # The local folder must be named by the user's UPN under AllFilesDirectory.
         # Example: C:\Repos\NPSBox\LocalFiles\user@contoso.com\
         if ($UploadFiles)
@@ -1850,7 +1849,7 @@ process
             Invoke-OneDriveUpload -DriveId $drive.Id -LocalSourcePath $userLocalPath -OwnerUpn $ownerUpn
         } # if
 
-        # ── Process each CSV row for this owner: resolve item, grant permission ──
+        # -- Process each CSV row for this owner: resolve item, grant permission --
         foreach ($row in $rows)
         {
             $itemPath = [string] $row.Path
@@ -1858,7 +1857,7 @@ process
             $collab   = [string] $row.'Collaborator Login'
             $boxPerm  = [string] $row.'Collaborator Permission'
 
-            # ── Unified empty-cell validation (D6) ───────────────────────────
+            # -- Unified empty-cell validation (D6) ---------------------------
             # Check all required fields at once before processing.  This gives
             # a consistent error for any empty/whitespace cell rather than
             # failing at different points with different messages.
@@ -1918,7 +1917,7 @@ process
                     $result.Action = 'Skipped'
                     $result.Status = 'Skipped'
                     $result.Error  = "Domain not in AllowedDomains list."
-                    Write-LogLine -Level 'WARN' -Message ("Skipping external collaborator '{0}' — domain not in AllowedDomains." -f $collab)
+                    Write-LogLine -Level 'WARN' -Message ("Skipping external collaborator '{0}' - domain not in AllowedDomains." -f $collab)
                     $result
                     continue
                 } # if
@@ -1962,12 +1961,12 @@ process
                 $target = "DriveItemId=$($driveItem.id) Path='$itemPath' -> grant '$collab' Role='$graphRole'"
                 if ($PSCmdlet.ShouldProcess($target, "Invite collaborator via Microsoft Graph (silent grant)"))
                 {
-                    # ── Grant permission using the driveItem: invite API ─────────
+                    # -- Grant permission using the driveItem: invite API ---------
                     # POST /drives/{driveId}/items/{itemId}/invite
                     # This creates a sharing permission on the item.
                     #
                     # Key body properties:
-                    #   recipients     : array of { email } objects — who to share with
+                    #   recipients     : array of { email } objects - who to share with
                     #   roles          : 'read' or 'write'
                     #   requireSignIn  : recipient must sign in to access
                     #   sendInvitation : false = NO EMAIL is sent; permission is granted silently
@@ -1986,7 +1985,7 @@ process
                         Invoke-MgGraphRequest -Method POST -Uri $inviteUri -Body $body -ContentType 'application/json' -ErrorAction Stop
                     } # inline:$inviteResponse = Invoke-WithGraphRetry 
 
-                    # ── Validate the invite response ────────────────────────────
+                    # -- Validate the invite response ----------------------------
                     # The API returns { value: [ { id, roles, ... } ] }.
                     # A 207 Multi-Status can include per-recipient errors.
                     $grantedPermissions = $inviteResponse.value
@@ -2031,17 +2030,17 @@ process
             } # catch
 
             $result
-        } # foreach — row
+        } # foreach - row
 
-        Write-LogLine -Message ("── Finished processing owner: {0} ──" -f $ownerUpn)
-    } # foreach — owner
+        Write-LogLine -Message ("-- Finished processing owner: {0} --" -f $ownerUpn)
+    } # foreach - owner
 } # process
 
-# ╔═══════════════════════════════════════════════════════════════════════════════╗
-# ║  END BLOCK                                                                   ║
-# ║  Runs once after all pipeline input has been processed.                      ║
-# ║  Used here to disconnect from Microsoft Graph and clean up the session.      ║
-# ╚═══════════════════════════════════════════════════════════════════════════════╝
+# #===============================================================================#
+# #  END BLOCK                                                                   #
+# #  Runs once after all pipeline input has been processed.                      #
+# #  Used here to disconnect from Microsoft Graph and clean up the session.      #
+# #===============================================================================#
 end
 {
     if ($script:HelpModeActive) { return }
@@ -2054,6 +2053,6 @@ end
     } # try
     catch
     {
-        # Non-fatal — the session will be cleaned up when PowerShell exits anyway.
+        # Non-fatal - the session will be cleaned up when PowerShell exits anyway.
     } # catch
 } # end

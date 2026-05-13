@@ -1859,7 +1859,7 @@ Describe 'Update-UserFile.ps1' {
             Mock -CommandName 'Invoke-MgGraphRequest' -MockWith { }
 
             $results = & {
-                . $script:ScriptUnderTest -Test -InputFile $script:TestCsv -UserToProcess $script:DefaultOwner `
+                . $script:ScriptUnderTest -Test -InputFile $script:TestCsv `
                     -TenantId $script:DefaultTenantId -ClientId $script:DefaultClientId -CertificateThumbprint $script:DefaultThumbprint -LogFolder $script:LogFolder -Verbose:$false
             } 6>&1
 
