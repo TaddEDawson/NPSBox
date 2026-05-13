@@ -7,7 +7,7 @@ This repository migrates Box collaboration/export data into OneDrive for Busines
 ## Key Files
 | File | Purpose |
 |---|---|
-| `Update-UserFile.ps1` | Main script — Graph-based migration (resolve items, upload files, set permissions) |
+| `Update-UserFile.ps1` | Main script - Graph-based migration (resolve items, upload files, set permissions) |
 | `tests/Update-UserFile.Tests.ps1` | Pester 5 test suite (mocks all Graph/file system calls) |
 | `UserInfo.csv` / `Box_Collaboration_Sample_Data.csv` | Input CSV data (Owner Login, Path, Item Name, Collaborator Login, Collaborator Permission) |
 | `LocalFiles/` | Per-user subfolders (named by UPN) containing files to upload with `-UploadFiles` |
@@ -22,10 +22,10 @@ This repository migrates Box collaboration/export data into OneDrive for Busines
 
 ## Versioning Convention
 **On every commit that modifies `.ps1` files, update the Version and Date in the script's Comment-Based Help `.SYNOPSIS` block:**
-- **Location:** `Update-UserFile.ps1`, lines inside `.SYNOPSIS` — the `Version:` and `Date:` fields.
-- **Default increment:** Bump the fourth octet (revision) by 1. Example: `1.2.0.1` → `1.2.0.2`.
-- **Minor bump:** When the user requests a minor update, bump the third octet and reset the fourth. Example: `1.2.0.5` → `1.2.1.0`.
-- **Major bump:** Only when the user explicitly requests it. Bump the second octet and reset lower octets. Example: `1.2.1.0` → `1.3.0.0`.
+- **Location:** `Update-UserFile.ps1`, lines inside `.SYNOPSIS` - the `Version:` and `Date:` fields.
+- **Default increment:** Bump the fourth octet (revision) by 1. Example: `1.2.0.1` -> `1.2.0.2`.
+- **Minor bump:** When the user requests a minor update, bump the third octet and reset the fourth. Example: `1.2.0.5` -> `1.2.1.0`.
+- **Major bump:** Only when the user explicitly requests it. Bump the second octet and reset lower octets. Example: `1.2.1.0` -> `1.3.0.0`.
 - **Date:** Always update to the current date in `yyyy-MM-dd` format.
 - **Format in file:**
   ```
@@ -48,7 +48,8 @@ This repository migrates Box collaboration/export data into OneDrive for Busines
 
 # Coding Standards (this project)
 - PowerShell 7+ (`#Requires -Version 7.0`).
-- Allman-style braces with descriptive closing comments (e.g., `} # if`, `} # foreach — row`).
+- **ASCII-only source files.** All `.ps1`, `.psm1`, `.psd1`, `.md`, and `.json` files in this repository must contain ASCII characters only (code points 0x00-0x7F). Do NOT use box-drawing characters (`-`, `|`, `+`, etc. only -- never U+2500-U+257F), em/en dashes, smart quotes, arrows, bullets, non-breaking spaces, or other Unicode glyphs. Use plain ASCII substitutes: `-` for dashes, `->` for arrows, `*` for bullets, `"` and `'` for quotes, `<=`/`>=` for inequalities, `x` for multiplication, `^2` for superscripts. Save files as UTF-8 without BOM.
+- Allman-style braces with descriptive closing comments (e.g., `} # if`, `} # foreach - row`).
 - `[CmdletBinding(SupportsShouldProcess)]` on the main script and any function that modifies state.
 - Guard destructive operations with `$PSCmdlet.ShouldProcess()` to support `-WhatIf` and `-Confirm`.
 - Temporarily disable `$WhatIfPreference` only for read-only/logging operations.

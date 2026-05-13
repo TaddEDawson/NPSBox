@@ -6,7 +6,8 @@ applyTo: "**/*.ps1"
 # PowerShell Coding Standards
 
 - PowerShell 7+ (`#Requires -Version 7.0`).
-- Allman-style braces with descriptive closing comments: `} # if`, `} # foreach — row`.
+- **ASCII only.** Every `.ps1` file in this repository must contain ASCII characters (code points 0x00-0x7F) exclusively. Do NOT use box-drawing characters, em/en dashes, smart quotes, arrows, bullets, non-breaking spaces, or other Unicode glyphs in code, comments, banners, or string literals. Use plain ASCII substitutes: `-` for dashes, `->` for arrows, `*` for bullets, `"` and `'` for quotes, `<=`/`>=` for inequalities, `x` for multiplication, `^2` for superscripts. Section banners use `#`, `=`, and `-` only. Save files as UTF-8 without BOM.
+- Allman-style braces with descriptive closing comments: `} # if`, `} # foreach - row`.
 - `[CmdletBinding(SupportsShouldProcess)]` on any function that modifies state.
 - Guard destructive operations with `$PSCmdlet.ShouldProcess()` for `-WhatIf`/`-Confirm`.
 - Temporarily disable `$WhatIfPreference` only for read-only/logging operations.

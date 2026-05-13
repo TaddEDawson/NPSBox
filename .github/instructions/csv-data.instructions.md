@@ -14,9 +14,9 @@ applyTo: "**/*.csv"
 | `Item Name` | string | File or folder name (may contain spaces, parentheses, special characters) |
 | `Item Type` | string | `File` or `Folder` |
 | `Collaborator Login` | UPN (string) | User to grant access to. Empty values cause row failure. |
-| `Collaborator Permission` | string | Box role — see mapping below |
+| `Collaborator Permission` | string | Box role - see mapping below |
 
-## Box Role → Graph Permission Mapping
+## Box Role -> Graph Permission Mapping
 
 | Box Role | Graph Role | Action |
 |----------|------------|--------|

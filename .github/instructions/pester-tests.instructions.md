@@ -5,6 +5,8 @@ applyTo: "tests/**"
 
 # Pester 5 Test Conventions
 
+- **ASCII only.** Use plain ASCII characters (code points 0x00-0x7F) throughout test files. No box-drawing characters, smart quotes, em/en dashes, arrows, or bullets. Save files as UTF-8 without BOM.
+
 ## Structure
 
 - `Describe` block per script under test.
@@ -21,12 +23,12 @@ New-CsvRow -ItemName 'Doc1.txt' -CollaboratorPermission 'Editor'
 
 ## Mocking
 
-Mock ALL external dependencies — no real Graph or file-system calls in tests:
+Mock ALL external dependencies - no real Graph or file-system calls in tests:
 
-- `Assert-RequiredModules`, `Assert-GraphAssemblyCompatibility`, `Connect-GraphCertAuth` — mock as no-op.
-- `Connect-MgGraph`, `Disconnect-MgGraph` — mock as no-op.
-- `Get-MgUserDrive` — return `[PSCustomObject]@{ Id = $driveId; WebUrl = $webUrl }`.
-- `Invoke-MgGraphRequest` — branch on `$Uri` and `$Method` to return appropriate mock data.
+- `Assert-RequiredModules`, `Assert-GraphAssemblyCompatibility`, `Connect-GraphCertAuth` - mock as no-op.
+- `Connect-MgGraph`, `Disconnect-MgGraph` - mock as no-op.
+- `Get-MgUserDrive` - return `[PSCustomObject]@{ Id = $driveId; WebUrl = $webUrl }`.
+- `Invoke-MgGraphRequest` - branch on `$Uri` and `$Method` to return appropriate mock data.
 
 ## Script Invocation Pattern
 

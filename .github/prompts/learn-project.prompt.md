@@ -1,5 +1,5 @@
 ---
-description: "Learn how this project works — ask questions about PowerShell and Microsoft Graph techniques used here"
+description: "Learn how this project works - ask questions about PowerShell and Microsoft Graph techniques used here"
 mode: "ask"
 tools: [read, search, web]
 ---
@@ -21,57 +21,57 @@ This is a PowerShell 7 script (`Update-UserFile.ps1`) that migrates Box collabor
 ## Key techniques to be ready to explain
 
 ### PowerShell fundamentals used in this project
-- **`#Requires -Version 7.0`** — enforcing a minimum PowerShell version
-- **Comment-Based Help** (`.SYNOPSIS`, `.DESCRIPTION`, `.PARAMETER`, `.EXAMPLE`) — the `<# ... #>` block at the top of the script
-- **`[CmdletBinding()]` and `param()`** — making a script behave like a cmdlet with named parameters
-- **`SupportsShouldProcess`** — how `-WhatIf` and `-Confirm` work and why `$PSCmdlet.ShouldProcess()` guards destructive operations
-- **`begin` / `process` / `end` blocks** — the pipeline processing lifecycle and why CSV caching goes in `begin`
-- **Pipeline input** — `ValueFromPipeline`, `ValueFromPipelineByPropertyName`, and how to pipe UPNs into the script
-- **Parameter aliases** — `[Alias('Owner Login', 'User', 'UPN')]` and when they're useful
-- **Splatting** — using `@params` to pass a hashtable of parameters cleanly
-- **`switch` statements** — used here for Box-to-Graph role mapping
-- **`try` / `catch` / `finally`** — structured error handling with Allman-style braces
-- **`throw`** vs **`Write-Error`** — terminating vs non-terminating errors
-- **`Write-Verbose`** — diagnostic output that only appears with `-Verbose`
-- **`[pscustomobject]`** — creating structured result objects for pipeline output
-- **`Group-Object -AsHashTable`** — efficient O(1) lookups instead of repeated `Where-Object` filtering
-- **`ForEach-Object`** vs **`foreach`** — pipeline cmdlet vs language statement
-- **Format operator (`-f`)** — string formatting with `"{0} {1}" -f $a, $b`
-- **`[System.Uri]::EscapeDataString()`** — URL-encoding path segments for REST API calls
+- **`#Requires -Version 7.0`** - enforcing a minimum PowerShell version
+- **Comment-Based Help** (`.SYNOPSIS`, `.DESCRIPTION`, `.PARAMETER`, `.EXAMPLE`) - the `<# ... #>` block at the top of the script
+- **`[CmdletBinding()]` and `param()`** - making a script behave like a cmdlet with named parameters
+- **`SupportsShouldProcess`** - how `-WhatIf` and `-Confirm` work and why `$PSCmdlet.ShouldProcess()` guards destructive operations
+- **`begin` / `process` / `end` blocks** - the pipeline processing lifecycle and why CSV caching goes in `begin`
+- **Pipeline input** - `ValueFromPipeline`, `ValueFromPipelineByPropertyName`, and how to pipe UPNs into the script
+- **Parameter aliases** - `[Alias('Owner Login', 'User', 'UPN')]` and when they're useful
+- **Splatting** - using `@params` to pass a hashtable of parameters cleanly
+- **`switch` statements** - used here for Box-to-Graph role mapping
+- **`try` / `catch` / `finally`** - structured error handling with Allman-style braces
+- **`throw`** vs **`Write-Error`** - terminating vs non-terminating errors
+- **`Write-Verbose`** - diagnostic output that only appears with `-Verbose`
+- **`[pscustomobject]`** - creating structured result objects for pipeline output
+- **`Group-Object -AsHashTable`** - efficient O(1) lookups instead of repeated `Where-Object` filtering
+- **`ForEach-Object`** vs **`foreach`** - pipeline cmdlet vs language statement
+- **Format operator (`-f`)** - string formatting with `"{0} {1}" -f $a, $b`
+- **`[System.Uri]::EscapeDataString()`** - URL-encoding path segments for REST API calls
 
 ### Microsoft Graph concepts used in this project
-- **What is Microsoft Graph** — the unified REST API for Microsoft 365 services
-- **Application vs Delegated permissions** — this project uses app-only (Application) permissions with certificate auth; explain the difference
-- **App Registration** — `TenantId`, `ClientId`, and `CertificateThumbprint` — what each means and where to find them in Azure Portal
-- **`Connect-MgGraph`** — certificate-based authentication and why the script checks `AuthType -eq 'AppOnly'`
-- **`Invoke-MgGraphRequest`** — making raw REST calls to Graph (vs. using high-level cmdlets like `Get-MgUser`)
+- **What is Microsoft Graph** - the unified REST API for Microsoft 365 services
+- **Application vs Delegated permissions** - this project uses app-only (Application) permissions with certificate auth; explain the difference
+- **App Registration** - `TenantId`, `ClientId`, and `CertificateThumbprint` - what each means and where to find them in Azure Portal
+- **`Connect-MgGraph`** - certificate-based authentication and why the script checks `AuthType -eq 'AppOnly'`
+- **`Invoke-MgGraphRequest`** - making raw REST calls to Graph (vs. using high-level cmdlets like `Get-MgUser`)
 - **Graph API endpoints used:**
-  - `GET /users/{id}` — validate a user exists (`User.Read.All`)
-  - `GET /users/{id}/drive` — get a user's OneDrive drive ID (`Files.ReadWrite.All`)
-  - `GET /drives/{id}/root:/{path}` — resolve an item by path
-  - `PUT /drives/{id}/root:/{path}:/content` — upload a file (simple upload, ≤ 4 MB)
-  - `PATCH /drives/{id}/root:/{path}` — create a folder with conflict handling
-  - `POST /drives/{id}/items/{id}/invite` — grant sharing permissions silently
-- **Permission roles** — `read` and `write` in the Graph sharing model
-- **Retry-After and throttling (HTTP 429)** — how `Invoke-WithGraphRetry` implements exponential backoff and honors the `Retry-After` header
+  - `GET /users/{id}` - validate a user exists (`User.Read.All`)
+  - `GET /users/{id}/drive` - get a user's OneDrive drive ID (`Files.ReadWrite.All`)
+  - `GET /drives/{id}/root:/{path}` - resolve an item by path
+  - `PUT /drives/{id}/root:/{path}:/content` - upload a file (simple upload, <= 4 MB)
+  - `PATCH /drives/{id}/root:/{path}` - create a folder with conflict handling
+  - `POST /drives/{id}/items/{id}/invite` - grant sharing permissions silently
+- **Permission roles** - `read` and `write` in the Graph sharing model
+- **Retry-After and throttling (HTTP 429)** - how `Invoke-WithGraphRetry` implements exponential backoff and honors the `Retry-After` header
 
 ### Patterns specific to this project
-- **`Write-LogLine`** — dual-output logging (Verbose stream + log file) with caller line numbers
-- **`Invoke-WithGraphRetry`** — retry wrapper with exponential backoff for transient Graph errors
-- **`Assert-RequiredModules`** — verifying Graph SDK modules are installed before running
-- **`Assert-GraphPermissions`** — checking that the app has the right permissions before doing work
-- **`Test-CollaboratorDomain`** — domain allowlist validation to prevent external sharing
-- **`ConvertTo-OneDriveRelativePath`** — normalizing Box export paths (`All Files/...` prefix removal, backslash conversion)
-- **CSV caching** — reading the CSV once in `begin` and reusing it across pipeline inputs
-- **Duplicate detection** — `Sort-Object -Unique` on a 4-tuple key before processing
+- **`Write-LogLine`** - dual-output logging (Verbose stream + log file) with caller line numbers
+- **`Invoke-WithGraphRetry`** - retry wrapper with exponential backoff for transient Graph errors
+- **`Assert-RequiredModules`** - verifying Graph SDK modules are installed before running
+- **`Assert-GraphPermissions`** - checking that the app has the right permissions before doing work
+- **`Test-CollaboratorDomain`** - domain allowlist validation to prevent external sharing
+- **`ConvertTo-OneDriveRelativePath`** - normalizing Box export paths (`All Files/...` prefix removal, backslash conversion)
+- **CSV caching** - reading the CSV once in `begin` and reusing it across pipeline inputs
+- **Duplicate detection** - `Sort-Object -Unique` on a 4-tuple key before processing
 
 ### Testing with Pester 5
-- **Pester** — the PowerShell testing framework (like Jest, pytest, or xUnit)
-- **`Describe` / `Context` / `It`** — test structure
-- **`Mock`** — replacing real cmdlets (Graph calls, file system) with fake implementations
-- **`Should`** — assertion syntax (`| Should -Be`, `| Should -BeExactly`, `| Should -BeNullOrEmpty`)
-- **`BeforeAll`** — test setup that strips `#Requires` so module loading doesn't block tests
-- **`New-CsvRow`** — helper to build test CSV data with sensible defaults
+- **Pester** - the PowerShell testing framework (like Jest, pytest, or xUnit)
+- **`Describe` / `Context` / `It`** - test structure
+- **`Mock`** - replacing real cmdlets (Graph calls, file system) with fake implementations
+- **`Should`** - assertion syntax (`| Should -Be`, `| Should -BeExactly`, `| Should -BeNullOrEmpty`)
+- **`BeforeAll`** - test setup that strips `#Requires` so module loading doesn't block tests
+- **`New-CsvRow`** - helper to build test CSV data with sensible defaults
 
 ## Key documentation links to reference
 
@@ -89,7 +89,7 @@ This is a PowerShell 7 script (`Update-UserFile.ps1`) that migrates Box collabor
 ## Response style
 
 - Keep explanations concise but thorough enough for someone seeing these concepts for the first time.
-- Always ground answers in the actual project code — read the files and quote relevant snippets.
+- Always ground answers in the actual project code - read the files and quote relevant snippets.
 - When showing code, include the line numbers so the developer can find it in the file.
 - If the developer asks "why" something is done a certain way, explain both the technical reason and the practical benefit.
 - If a question goes beyond what this project covers, say so and point to the relevant Microsoft documentation.
