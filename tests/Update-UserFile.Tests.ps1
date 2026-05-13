@@ -837,7 +837,7 @@ Describe 'Update-UserFile.ps1' {
 
             $fileResults = $uploadResults | Where-Object { $_.Action -eq 'UploadFile' }
             $fileResults.Count | Should -Be 2
-            $fileResults | ForEach-Object { $_.Status | Should -Be 'Applied' }
+            $fileResults | ForEach-Object { $_.Status | Should -Be 'Completed' }
         }
 
         It 'should list files that would be uploaded with -WhatIf' {
@@ -931,7 +931,7 @@ Describe 'Update-UserFile.ps1' {
             $bigResult = $results |
                 Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' -and $_.LocalPath -eq $largeFile }
             $bigResult         | Should -Not -BeNullOrEmpty
-            $bigResult.Status  | Should -Be 'Applied'
+            $bigResult.Status  | Should -Be 'Completed'
             $bigResult.Error   | Should -BeNullOrEmpty
             Should -Invoke -CommandName 'Invoke-MgGraphRequest' -ParameterFilter { $Uri -match '/createUploadSession' } -Times 1
             Should -Invoke -CommandName 'Invoke-WebRequest' -Times 1
@@ -976,7 +976,7 @@ Describe 'Update-UserFile.ps1' {
 
             $bigResult = $results |
                 Where-Object { $_.PSObject.Properties.Name -contains 'Action' -and $_.Action -eq 'UploadFile' -and $_.LocalPath -eq $largeFile }
-            $bigResult.Status | Should -Be 'Applied'
+            $bigResult.Status | Should -Be 'Completed'
             $script:CapturedRanges.Count | Should -Be 2
             # First chunk = 0..(10 MiB - 1), second chunk = 10 MiB..(12 MiB - 1).
             $totalBytes = 12 * 1024 * 1024

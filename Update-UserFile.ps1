@@ -8,7 +8,7 @@
 .SYNOPSIS
     Applies OneDrive item sharing permissions based on a CSV file using Microsoft Graph.
 
-    Version: 1.2.2.7
+    Version: 1.2.2.8
     Date:    2026-05-13
 
 .DESCRIPTION
@@ -1157,7 +1157,7 @@ begin
                             Invoke-MgGraphRequest -Method PUT -Uri $uploadUri -Body $fileBytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
                         } # inline:Invoke-WithGraphRetry — simple upload PUT
                     } # else
-                    $result.Status = 'Applied'
+                    $result.Status = 'Completed'
                     Write-LogLine -Message ("Uploaded file ({0}): OneDrive:/{1} ({2} bytes)" -f ($useResumable ? 'resumable' : 'simple'), $relativePath, $file.Length)
                 } # if
                 else
@@ -1167,7 +1167,7 @@ begin
             } # try
             catch
             {
-                $result.Status = 'Failed'
+                $result.Status = 'Incomplete'
                 $result.Error  = $_.Exception.Message
                 Write-LogLine -Level 'ERROR' -Message ("Failed to upload file '{0}': {1}" -f $relativePath, $result.Error)
             } # catch
